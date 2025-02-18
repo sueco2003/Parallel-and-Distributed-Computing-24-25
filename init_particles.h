@@ -15,6 +15,11 @@ typedef struct {
     particle_t *head;
 } cell_t;
 
+typedef struct remove_particle {
+    particle_t *particle; 
+    struct remove_particle *next;
+} remove_particle_t;
+
 void init_r4uni(int input_seed);
 double rnd_uniform01();
 double rnd_normal01();

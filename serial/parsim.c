@@ -88,120 +88,58 @@ void calculate_centers_of_mass(particle_t *particles, cell_t **cells, int grid_s
     }
 
     for (int i = 0; i < grid_size; i++) {
-    for (int j = 0; j < grid_size; j++) {
-        cell_t *cell = &cells[j][i];
-        if (cell->mass_sum != 0) {
-            cell->cmx /= cell->mass_sum;
-            cell->cmy /= cell->mass_sum;
-        }
-        printf("Cell %d x: %.3f, y: %.3f, m: %.3f\n", cell_counter, cell->cmx, cell->cmy, cell->mass_sum);
-        cell_counter++;
+        for (int j = 0; j < grid_size; j++) {
+            cell_t *cell = &cells[j][i];
+            if (cell->mass_sum != 0) {
+                cell->cmx /= cell->mass_sum;
+                cell->cmy /= cell->mass_sum;
+            }
+            //printf("Cell %d x: %.3f, y: %.3f, m: %.3f\n", cell_counter, cell->cmx, cell->cmy, cell->mass_sum);
+            cell_counter++;
         }
     }
 }
 
 // Check for collisions between particles
-int check_collisions(particle_t *particles, int *number_particles, cell_t **cells, int grid_size) {
+int check_collisions(particle_t *particles, int *number_particles, cell_t **cells, int grid_size, bool *collision_flags) {
     int collision_count = 0;
+
+    // Detect collisions and mark particles for removal
     for (int i = 0; i < grid_size; i++) {
         for (int j = 0; j < grid_size; j++) {
             for (particle_t *particle = cells[i][j].head; particle != NULL; particle = particle->next) {
+                if (particle->m == 0) continue;
                 for (particle_t *other = particle->next; other != NULL; other = other->next) {
                     double dx = particle->x - other->x;
                     double dy = particle->y - other->y;
                     double dist2 = dx * dx + dy * dy;
-
-                    printf("Checking collision between %lf and %lf: dist2 - %f\n", particle->m, other->m, dist2);
-                    if (dist2 <= EPSILON2) {
+                    //printf("Dist2: %.3f massa1 %f massa2 %f\n", sqrt(dist2), particle->m, other->m);
+                    // Ensure we only check unique pairs
+                    if (sqrt(dist2) <= sqrt(EPSILON2)) {
+                        //printf("Collision detected\n");
                         collision_count++;
-                        // Remove the other particle
-                        if (other->prev != NULL) {
-                            other->prev->next = other->next;
-                        } else {
-                            cells[i][j].head = other->next;
-                        }
-
-                        if (other->next != NULL) {
-                            other->next->prev = other->prev;
-                        }
-                        
-                        // TODO NAO ESTAO A SER REMOVIDAS CORRETAMENTE, FALTA LIMPAR O ARRAY
-                        (*number_particles)--;
-
-                        // Remove the other particle
-                        if (particle->prev != NULL) {
-                            particle->prev->next = particle->next;
-                        } else {
-                            cells[i][j].head = particle->next;
-                        }
-
-                        if (particle->next != NULL) {
-                            particle->next->prev = particle->prev;
-                        }
-
-                        (*number_particles)--;
+                        particle->m = 0;
+                        other->m = 0;
                     }
                 }
             }
         }
     }
 
+
     return collision_count;
 }
 
 // Ver se só se fazem as alterações no final para todas, ou se é tipo Stochastic, vai-se alterando
 
-void calculate_new_iteration(particle_t *particles,
-                             cell_t **cells,
-                             int grid_size,
-                             double space_size,
-                             int number_particles) {
+void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_size, double space_size, int number_particles) {
     for (int i = 0; i < number_particles; i++) {
         particle_t *particle = &particles[i];
         double fx = 0.0, fy = 0.0;
-        bool is_edge_x = (particle->cellx == 0 || particle->cellx == grid_size - 1);
-        bool is_edge_y = (particle->celly == 0 || particle->celly == grid_size - 1);
-
-        // Forças vindas dos centros de massa das células adjacentes
-        for (int c = 0; c < 8; c++) {
-            int ni = cells[particle->cellx][particle->celly].adj_cells[c][0];
-            int nj = cells[particle->cellx][particle->celly].adj_cells[c][1];
-
-            cell_t *cell = &cells[ni][nj];
-
-            double dx = cell->cmx - particle->x;
-            double dy = cell->cmy - particle->y;
-
-            // Ajusta para o wrap-around, se necessário
-            if (dx > space_size / 2 && is_edge_x) dx -= space_size;
-            if (dx < -space_size / 2 && is_edge_x) dx += space_size;
-            if (dy > space_size / 2 && is_edge_y) dy -= space_size;
-            if (dy < -space_size / 2 && is_edge_y) dy += space_size;
-
-            double dist2 = dx * dx + dy * dy;
-            if (dist2 == 0.0) continue;
-            double dist = sqrt(dist2);
-            double f = G * particle->m * cell->mass_sum / dist2;
-            double partial_fx = f * (dx / dist);
-            double partial_fy = f * (dy / dist);
-
-            // Imprime os dados apenas para a partícula 0
-            if (i == 0) {
-                printf("P0/C[%d,%d] mag: %.6e vecx: %.6e vecy: %.6e fx: %.6e fy: %.6e\n",
-                       ni, nj,
-                       f, (dx / dist), (dy / dist),
-                       partial_fx, partial_fy);
-            }
-
-            fx += partial_fx;
-            fy += partial_fy;
-        }
+        if (particle->m == 0) continue;
 
         // Forças vindas das partículas na mesma célula
-        for (particle_t *other = cells[particle->cellx][particle->celly].head;
-             other != NULL;
-             other = other->next)
-        {
+        for (particle_t *other = cells[particle->cellx][particle->celly].head; other != NULL; other = other->next) {
             if (other == particle)
                 continue;
 
@@ -216,13 +154,43 @@ void calculate_new_iteration(particle_t *particles,
             double partial_fy = f * (dy / dist);
 
             if (i == 0) {
-                printf("P0/P[%p] mag: %.3f vecx: %.3f vecy: %.3f fx: %.3f fy: %.3f\n", 
-                (void*)other, f, (dx / dist), (dy / dist), partial_fx, partial_fy);
+                //printf("P0/P[%p] mag: %.3f vecx: %.3f vecy: %.3f fx: %.3f fy: %.3f\n", 
+                //(void*)other, f, (dx / dist), (dy / dist), partial_fx, partial_fy);
             }
 
             fx += partial_fx;
             fy += partial_fy;
         }
+        // Forças vindas dos centros de massa das células adjacentes
+        for (int c = 0; c < 8; c++) {
+            int ni = cells[particle->cellx][particle->celly].adj_cells[c][0];
+            int nj = cells[particle->cellx][particle->celly].adj_cells[c][1];
+            cell_t *cell = &cells[ni][nj];
+            double dx = cell->cmx - particle->x;
+            double dy = cell->cmy - particle->y;
+
+            // Ajusta para o wrap-around, se necessário
+            if (particle->cellx == 0 && ni == grid_size - 1) dx -= space_size;
+            if (particle->cellx == grid_size - 1 && ni == 0) dx += space_size;
+            if (particle->celly == 0 && nj == grid_size - 1) dy -= space_size;
+            if (particle->celly == grid_size - 1 && nj == 0) dy += space_size;
+
+            double dist2 = dx * dx + dy * dy;
+            if (dist2 == 0.0) continue;
+            double dist = sqrt(dist2);
+            double f = G * particle->m * cell->mass_sum / dist2;
+            double partial_fx = f * (dx / dist);
+            double partial_fy = f * (dy / dist);
+
+            // Imprime os dados apenas para a partícula 0
+            if (i == 0) {
+                //printf("P0/C[%d,%d] mag: %.3f vecx: %.3f vecy: %.3f fx: %.3f fy: %.3f\n", ni, nj, f, (dx / dist), (dy / dist), partial_fx, partial_fy);
+            }
+            fx += partial_fx;
+            fy += partial_fy;
+        }
+
+        
 
         // Atualiza velocidade e posição da partícula
         particle->vx += (fx / particle->m) * DELTAT;
@@ -248,6 +216,7 @@ void calculate_new_iteration(particle_t *particles,
             }
 
             // Insere a partícula na nova célula
+            //printf("Particle %d moved from cell (%d, %d) to cell (%d, %d)\n", i, previous_cellx, previous_celly, particle->cellx, particle->celly);
             particle->next = cells[particle->cellx][particle->celly].head;
             particle->prev = NULL;
             if (cells[particle->cellx][particle->celly].head != NULL) {
@@ -256,7 +225,6 @@ void calculate_new_iteration(particle_t *particles,
             cells[particle->cellx][particle->celly].head = particle;
         }
         
-        printf("Particle %d: mass = %.3f, x = %.3f, y = %.3f, vx = %.3f, vy = %.3f\n", i, particle->m, particle->x, particle->y, particle->vx, particle->vy);
     }
     printf("\n");
 }
@@ -276,15 +244,27 @@ int main(int argc, char *argv[]) {
     int collision_count = 0;
 
     particle_t *particles = (particle_t *)malloc(sizeof(particle_t) * number_particles);
+    bool *collision_flags = (bool *)malloc(sizeof(bool) * number_particles);
+    if (!particles || !collision_flags) {
+        fprintf(stderr, "Failed to allocate memory for particles\n");
+        return 1;
+    }
     init_particles(seed, space_size, grid_size, number_particles, particles);
     cell_t **cells = init_cells(grid_size, space_size, number_particles, particles);
 
     for (int n = 0; n < n_time_steps; n++) {
+        printf("Time step %d\n\n", n);
+        //for (int i = 0; i < number_particles; i++) {
+        //    printf("Particle %d: mass = %.3f, x = %.3f, y = %.3f, vx = %.3f, vy = %.3f\n", i, particles[i].m, particles[i].x, particles[i].y, particles[i].vx, particles[i].vy);
+        //}
         calculate_centers_of_mass(particles, cells, grid_size, space_size, number_particles);
         calculate_new_iteration(particles, cells, grid_size, space_size, number_particles);
-        collision_count += check_collisions(particles, (int *)&number_particles, cells, grid_size);
-        memset(cells[0], 0, sizeof(cell_t) * grid_size * grid_size);
+        collision_count += check_collisions(particles, (int *)&number_particles, cells, grid_size, collision_flags);
     }
+    printf("\n");
+    //for (int i = 0; i < number_particles; i++) {
+     //   printf("Particle %d: mass = %.3f, x = %.3f, y = %.3f, vx = %.3f, vy = %.3f\n", i, particles[i].m, particles[i].x, particles[i].y, particles[i].vx, particles[i].vy);
+    //}
     printf("%.3f %.3f\n", particles[0].x, particles[0].y);
 
     printf("%d\n", collision_count);
