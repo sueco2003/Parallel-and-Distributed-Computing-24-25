@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
+#include <stdbool.h>
+#include "../init_particles.h"
 
 #define G 6.67408e-11
 #define EPSILON2 (0.005 * 0.005)
@@ -9,68 +11,8 @@
 
 #define _USE_MATH_DEFINES
 
-typedef struct particle {
-    int cellx, celly;
-    double x, y, vx, vy, m;
-    struct particle *prev, *next;
-} particle_t;
 
-typedef struct {
-    double mass_sum;
-    double cmx;
-    double cmy;
-    int adj_cells[8][2];  // Store (x, y) coordinates of 8 neighbors
-    particle_t *head;
-} cell_t;
-long seed;
-
-void init_r4uni(int input_seed) {
-    seed = input_seed + 987654321;
-}
-
-double rnd_uniform01() {
-    int seed_in = seed;
-    seed ^= (seed << 13);
-    seed ^= (seed >> 17);
-    seed ^= (seed << 5);
-    return 0.5 + 0.2328306e-09 * (seed_in + (int) seed);
-}
-
-double rnd_normal01() {
-    double u1, u2, z, result;
-    do {
-        u1 = rnd_uniform01();
-        u2 = rnd_uniform01();
-        z = sqrt(-2 * log(u1)) * cos(2 * M_PI * u2);
-        result = 0.5 + 0.15 * z;
-    } while (result < 0 || result >= 1);
-    return result;
-}
-
-// Initialize particles
-void init_particles(long seed, double side, long ncside, long long n_part, particle_t *par)
-{
-    double (*rnd01)() = rnd_uniform01;
-    long long i;
-
-    if(seed < 0) {
-        rnd01 = rnd_normal01;
-        seed = -seed;
-    }
-    
-    init_r4uni(seed);
-
-    for(i = 0; i < n_part; i++) {
-        par[i].x = rnd01() * side;
-        par[i].y = rnd01() * side;
-        par[i].vx = (rnd01() - 0.5) * side / ncside / 5.0;
-        par[i].vy = (rnd01() - 0.5) * side / ncside / 5.0;
-
-        par[i].m = rnd01() * 0.01 * (ncside * ncside) / n_part / G * EPSILON2;
-    }
-}
-
-cell_t **init_cells(int grid_size, int space_size, long long number_particles, particle_t *particles) {
+cell_t **init_cells(int grid_size, double space_size, long long number_particles, particle_t *particles) {
     cell_t **cells = (cell_t **)malloc(sizeof(cell_t *) * grid_size);
     if (!cells) return NULL;
 
@@ -84,6 +26,7 @@ cell_t **init_cells(int grid_size, int space_size, long long number_particles, p
             cells[i][j].cmx = 0;
             cells[i][j].cmy = 0;
             cells[i][j].head = NULL;
+            memset(cells[i][j].adj_cells, 0, sizeof(cells[i][j].adj_cells));
 
             // Compute adjacent cells with wraparound
             int adj_idx = 0;
@@ -108,7 +51,6 @@ cell_t **init_cells(int grid_size, int space_size, long long number_particles, p
         // Determine the cell coordinates
         particle->cellx = (int)(particle->x / ((double)space_size / grid_size));
         particle->celly = (int)(particle->y / ((double)space_size / grid_size));
-    
         // Insert particle at the head of the list
         particle->next = cells[particle->cellx][particle->celly].head;
         particle->prev = NULL;  // Since it's the new head, it has no previous element
@@ -136,7 +78,6 @@ void calculate_centers_of_mass(particle_t *particles, cell_t **cells, int grid_s
     }
 
     for (int i = 0; i < number_particles; i++) {
-        printf("miau %d\n", i );
         particle_t *particle = &particles[i];
         cell_t *cell = &cells[particle->cellx][particle->celly];
         
@@ -152,6 +93,7 @@ void calculate_centers_of_mass(particle_t *particles, cell_t **cells, int grid_s
                 cell->cmx /= cell->mass_sum;
                 cell->cmy /= cell->mass_sum;
             }
+            printf("Cell %d %d: mass - %f, cmx - %f, cmy - %f\n", i, j, cell->mass_sum, cell->cmx, cell->cmy);
         }
     }
 }
@@ -167,6 +109,7 @@ int check_collisions(particle_t *particles, int *number_particles, cell_t **cell
                     double dy = particle->y - other->y;
                     double dist2 = dx * dx + dy * dy;
 
+                    printf("Checking collision between %lf and %lf: dist2 - %f\n", particle->m, other->m, dist2);
                     if (dist2 <= EPSILON2) {
                         collision_count++;
                         // Remove the other particle
@@ -179,7 +122,8 @@ int check_collisions(particle_t *particles, int *number_particles, cell_t **cell
                         if (other->next != NULL) {
                             other->next->prev = other->prev;
                         }
-
+                        
+                        // TODO NAO ESTAO A SER REMOVIDAS CORRETAMENTE, FALTA LIMPAR O ARRAY
                         (*number_particles)--;
 
                         // Remove the other particle
@@ -203,52 +147,43 @@ int check_collisions(particle_t *particles, int *number_particles, cell_t **cell
     return collision_count;
 }
 
+// Ver se só se fazem as alterações no final para todas, ou se é tipo Stochastic, vai-se alterando
 
-
-// Compute overall center of mass
-void calculate_overall_center_of_mass(particle_t *particles, int number_particles, double *center_of_mass) {
-    center_of_mass[0] = 0.0;
-    center_of_mass[1] = 0.0;
-    double total_mass = 0.0;
-
-    for (int i = 0; i < number_particles; i++) {
-        total_mass += particles[i].m;
-        center_of_mass[0] += particles[i].m * particles[i].x;
-        center_of_mass[1] += particles[i].m * particles[i].y;
-    }
-
-    if (total_mass > 0) {
-        center_of_mass[0] /= total_mass;
-        center_of_mass[1] /= total_mass;
-    } else {
-        center_of_mass[0] = 0.0;
-        center_of_mass[1] = 0.0;
-    }
-}
-
-
-void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_size, int space_size, int number_particles) {
+void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_size, double space_size, int number_particles) {
     for (int i = 0; i < number_particles; i++) {
         particle_t *particle = &particles[i];
-        printf("Before Particle %d: %f %f %f %f %f %d %d\n", i, particle->x, particle->y, particle->vx, particle->vy, particle->m, particle->cellx, particle->celly);
+        printf("Before Particle %d: mass - %f, x - %f, y - %f, vx - %f, vy - %f, cx - %d, cy - %d\n", i, particle->m, particle->x, particle->y, particle->vx, particle->vy, particle->cellx, particle->celly);
 
         // Compute the force acting on the particle
         double fx = 0, fy = 0;
+        bool is_edge_x = (particle->cellx == 0 || particle->cellx == grid_size - 1);
+        bool is_edge_y = (particle->celly == 0 || particle->celly == grid_size - 1);
+
+        // Loop through adjacent cells
         for (int i = 0; i < 8; i++) {
             int ni = cells[particle->cellx][particle->celly].adj_cells[i][0];
             int nj = cells[particle->cellx][particle->celly].adj_cells[i][1];
+        
             cell_t *cell = &cells[ni][nj];
-
+        
             double dx = cell->cmx - particle->x;
             double dy = cell->cmy - particle->y;
+
+            // Compute shortest wraparound distance
+            if (dx > space_size / 2 && is_edge_x) dx -= space_size;
+            if (dx < -space_size / 2 && is_edge_x) dx += space_size;
+            if (dy > space_size / 2 && is_edge_y) dy -= space_size;
+            if (dy < -space_size / 2 && is_edge_y) dy += space_size;
+        
             double dist2 = dx * dx + dy * dy;
-
             if (dist2 == 0) continue;
-
+        
             double f = G * particle->m * cell->mass_sum / dist2;
             fx += f * dx / sqrt(dist2);
             fy += f * dy / sqrt(dist2);
         }
+        
+
         for (particle_t *other = cells[particle->cellx][particle->celly].head; other != NULL; other = other->next) {
             double dx = other->x - particle->x;
             double dy = other->y - particle->y;
@@ -267,15 +202,40 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
         particle->x += particle->vx * DELTAT + 0.5 * fx / particle->m * DELTAT * DELTAT;
         particle->y += particle->vy * DELTAT + 0.5 * fy / particle->m * DELTAT * DELTAT;
 
-        particle->x = fmod(fmod(particle->x, space_size) + space_size, space_size);
-        particle->y = fmod(fmod(particle->y, space_size) + space_size, space_size);
-
+        int previous_cellx = particle->cellx;
+        int previous_celly = particle->celly;
         // Update cell position after movement
         particle->cellx = (int)(particle->x / ((double)space_size / grid_size));
         particle->celly = (int)(particle->y / ((double)space_size / grid_size));
+
+        if (particle->cellx != previous_cellx || particle->celly != previous_celly) {
+            // Remove the particle from the current cell
+            if (particle->prev != NULL) {
+                particle->prev->next = particle->next;
+            } else {
+                cells[previous_cellx][previous_celly].head = particle->next;
+            }
+
+            if (particle->next != NULL) {
+                particle->next->prev = particle->prev;
+            }
+
+            // Insert the particle in the new cell
+            particle->next = cells[particle->cellx][particle->celly].head;
+            particle->prev = NULL;  // Since it's the new head, it has no previous element
+
+            // Update the previous head's prev pointer to point to the new particle
+            if (cells[particle->cellx][particle->celly].head != NULL) {
+                cells[particle->cellx][particle->celly].head->prev = particle;
+            }
+
+            // Update the cell's head to the new particle
+            cells[particle->cellx][particle->celly].head = particle;
+        }
         
-        printf("After Particle %d: %f %f %f %f %f %d %d\n", i, particle->x, particle->y, particle->vx, particle->vy, particle->m, particle->cellx, particle->celly);
+        printf("After Particle %d: mass - %f, x - %f, y - %f, vx - %f, vy - %f\n", i, particle->m, particle->x, particle->y, particle->vx, particle->vy);
     }
+    printf("\n");
 }
 
 // Main function
@@ -285,7 +245,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    seed = atol(argv[1]);
+    int seed = atol(argv[1]);
     double space_size = atof(argv[2]);
     int grid_size = atoi(argv[3]);
     long long number_particles = atoll(argv[4]);
@@ -303,16 +263,16 @@ int main(int argc, char *argv[]) {
         collision_count += check_collisions(particles, (int *)&number_particles, cells, grid_size);
         memset(cells[0], 0, sizeof(cell_t) * grid_size * grid_size);
     }
-    double center_of_mass[2];  // Use double instead of int
-    
-    calculate_overall_center_of_mass(particles, number_particles, center_of_mass);
-    printf("%.3f %.3f\n", center_of_mass[0], center_of_mass[1]);
+    printf("%.3f %.3f\n", particles[0].x, particles[0].y);
 
     printf("%d\n", collision_count);
 
     free(particles);
-    free(cells[0]);
+    for (int i = 0; i < grid_size; i++) {
+        free(cells[i]);
+    }
     free(cells);
+    
     return 0;
 }
 
