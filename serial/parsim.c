@@ -152,7 +152,7 @@ int check_collisions(particle_t *particles, int *number_particles, cell_t **cell
 void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_size, double space_size, int number_particles) {
     for (int i = 0; i < number_particles; i++) {
         particle_t *particle = &particles[i];
-        printf("Before Particle %d: mass - %f, x - %f, y - %f, vx - %f, vy - %f, cx - %d, cy - %d\n", i, particle->m, particle->x, particle->y, particle->vx, particle->vy, particle->cellx, particle->celly);
+        printf("Before Particle %d: mass - %.3f, x - %.3f, y - %.3f, vx - %.3f, vy - %.3f, cx - %d, cy - %d\n", i, particle->m, particle->x, particle->y, particle->vx, particle->vy, particle->cellx, particle->celly);
 
         // Compute the force acting on the particle
         double fx = 0, fy = 0;
@@ -233,7 +233,7 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
             cells[particle->cellx][particle->celly].head = particle;
         }
         
-        printf("After Particle %d: mass - %f, x - %f, y - %f, vx - %f, vy - %f\n", i, particle->m, particle->x, particle->y, particle->vx, particle->vy);
+        printf("After Particle %d: mass - %.3f, x - %.3f, y - %.3f, vx - %.3f, vy - %.3f\n", i, particle->m, particle->x, particle->y, particle->vx, particle->vy);
     }
     printf("\n");
 }
