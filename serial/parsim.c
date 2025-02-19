@@ -367,7 +367,7 @@ int main(int argc, char *argv[]) {
 
     // exec_time = -omp_get_wtime();
 
-    collision_count = (particles, grid_size, space_size, number_particles, n_time_steps);   
+    collision_count = simulation(particles, grid_size, space_size, number_particles, n_time_steps);   
     
     // exec_time += omp_get_wtime();
     // fprintf(stderr, "%.1fs\n", exec_time);
