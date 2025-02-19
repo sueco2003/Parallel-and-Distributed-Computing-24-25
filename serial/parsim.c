@@ -12,7 +12,21 @@
 
 #define _USE_MATH_DEFINES
 
-
+/**
+ * Initializes a grid of cells and assigns particles to their respective cells.
+ *
+ * This function allocates memory for a 2D grid of cells based on the specified
+ * grid size. Each cell is initialized with a list head set to NULL and its
+ * adjacent cells are computed with wraparound logic. Particles are then assigned
+ * to cells based on their coordinates, and inserted at the head of the cell's
+ * particle list.
+ *
+ * @param grid_size The size of the grid (number of cells along one dimension).
+ * @param space_size The physical size of the space being simulated.
+ * @param number_particles The total number of particles to be placed in the grid.
+ * @param particles An array of particles to be distributed across the grid.
+ * @return A pointer to the 2D array of cells, or NULL if memory allocation fails.
+ */
 cell_t **init_cells(int grid_size, double space_size, long long number_particles, particle_t *particles) {
 
     cell_t **cells = (cell_t **)malloc(sizeof(cell_t *) * grid_size);
@@ -69,7 +83,21 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
 }
 
 
-// Compute the center of mass of each cell
+/**
+ * Calculates the centers of mass for each cell in a grid based on particle data.
+ *
+ * This function iterates over a grid of cells, initializing each cell's mass sum
+ * and center of mass coordinates to zero. It then processes each particle, updating
+ * the mass sum and weighted position sums for the cell corresponding to each particle's
+ * coordinates. Finally, it computes the center of mass for each cell by dividing the
+ * weighted sums by the total mass sum, if the mass sum is non-zero.
+ *
+ * @param particles An array of particles, each containing mass and position data.
+ * @param cells A 2D array of cells where each cell will have its center of mass calculated.
+ * @param grid_size The number of cells along one dimension of the grid.
+ * @param space_size The physical size of the space being simulated.
+ * @param number_particles The total number of particles to be processed.
+ */
 void calculate_centers_of_mass(particle_t *particles, cell_t **cells, int grid_size, int space_size, int number_particles) {
     int cell_counter = 0;
     for (int i = 0; i < grid_size; i++) {
@@ -96,14 +124,26 @@ void calculate_centers_of_mass(particle_t *particles, cell_t **cells, int grid_s
                 cell->cmx /= cell->mass_sum;
                 cell->cmy /= cell->mass_sum;
             }
-            //printf("Cell %d x: %.3f, y: %.3f, m: %.3f\n", cell_counter, cell->cmx, cell->cmy, cell->mass_sum);
             cell_counter++;
         }
     }
 }
 
 
-// Check for collisions between particles
+/**
+ * Checks for collisions between particles within a grid of cells.
+ *
+ * This function iterates over each cell in a 2D grid and examines pairs of particles
+ * to detect collisions. A collision is identified when the squared distance between
+ * two particles is less than or equal to a predefined threshold (EPSILON2). When a
+ * collision is detected, both particles are marked for removal by setting their mass
+ * to zero. The function returns the total number of collisions detected.
+ *
+ * @param particles An array of particles to be checked for collisions.
+ * @param cells A 2D array of cells containing particles.
+ * @param grid_size The number of cells along one dimension of the grid.
+ * @return The total number of collisions detected.
+ */
 int check_collisions(particle_t *particles, cell_t **cells, int grid_size) {
 
     int collision_count = 0;
@@ -121,7 +161,6 @@ int check_collisions(particle_t *particles, cell_t **cells, int grid_size) {
 
                     // Ensure we only check unique pairs
                     if (dist2 <= EPSILON2) {
-                        //printf("Collision detected\n");
                         collision_count++;
                         particle->m = 0;
                         other->m = 0;
@@ -134,11 +173,24 @@ int check_collisions(particle_t *particles, cell_t **cells, int grid_size) {
     return collision_count;
 }
 
-// Ver se só se fazem as alterações no final para todas, ou se é tipo Stochastic, vai-se alterando
+/**
+ * Updates the state of particles for a new iteration in a grid-based simulation.
+ *
+ * This function calculates the forces acting on each particle from other particles
+ * within the same cell and from the centers of mass of adjacent cells. It updates
+ * the velocity and position of each particle based on these forces and moves the
+ * particle to a new cell if necessary. The function handles wrap-around logic for
+ * particles near the grid boundaries.
+ *
+ * @param particles An array of particles to be updated.
+ * @param cells A 2D array of cells containing particles and their centers of mass.
+ * @param grid_size The number of cells along one dimension of the grid.
+ * @param space_size The physical size of the space being simulated.
+ * @param number_particles The total number of particles to be processed.
+ */
+void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_size, double space_size, long long number_particles) {
 
-void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_size, double space_size, int number_particles) {
-
-    for (int i = 0; i < number_particles; i++) {
+    for (long long i = 0; i < number_particles; i++) {
 
         particle_t *particle = &particles[i];
         double fx = 0.0, fy = 0.0;
@@ -162,10 +214,6 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
             double partial_fx = f * (dx / dist);
             double partial_fy = f * (dy / dist);
 
-            if (i == 0) {
-                //printf("P0/P[%p] mag: %.3f vecx: %.3f vecy: %.3f fx: %.3f fy: %.3f\n", 
-                //(void*)other, f, (dx / dist), (dy / dist), partial_fx, partial_fy);
-            }
 
             fx += partial_fx;
             fy += partial_fy;
@@ -192,10 +240,6 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
             double partial_fx = f * (dx / dist);
             double partial_fy = f * (dy / dist);
 
-            // Imprime os dados apenas para a partícula 0
-            if (i == 0) {
-                //printf("P0/C[%d,%d] mag: %.3f vecx: %.3f vecy: %.3f fx: %.3f fy: %.3f\n", ni, nj, f, (dx / dist), (dy / dist), partial_fx, partial_fy);
-            }
             fx += partial_fx;
             fy += partial_fy;
         } 
@@ -227,8 +271,6 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
                 particle->next->prev = particle->prev;
             }
 
-            // Insere a partícula na nova célula
-            //printf("Particle %d moved from cell (%d, %d) to cell (%d, %d)\n", i, previous_cellx, previous_celly, particle->cellx, particle->celly);
             particle->next = cells[particle->cellx][particle->celly].head;
             particle->prev = NULL;
             if (cells[particle->cellx][particle->celly].head != NULL) {
@@ -240,27 +282,66 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
     }
 }
 
-
-void simulation(particle_t *particles, int grid_size, double space_size, long long number_particles, int n_time_steps) {
+/**
+ * Simulates the dynamics of particles in a grid-based space over a series of time steps.
+ *
+ * This function initializes a grid of cells and assigns particles to them. It then
+ * iteratively calculates the centers of mass, updates particle states, and checks for
+ * collisions over the specified number of time steps. The total number of collisions
+ * detected during the simulation is returned.
+ *
+ * @param particles An array of particles to be simulated.
+ * @param grid_size The number of cells along one dimension of the grid.
+ * @param space_size The physical size of the space being simulated.
+ * @param number_particles The total number of particles in the simulation.
+ * @param n_time_steps The number of time steps to simulate.
+ * @return The total number of collisions detected during the simulation.
+ */
+int simulation(particle_t *particles, int grid_size, double space_size, long long number_particles, int n_time_steps) {
     
     int collision_count = 0;
 
     cell_t **cells = init_cells(grid_size, space_size, number_particles, particles);
 
     for (int n = 0; n < n_time_steps; n++) {
-        printf("Time step %d\n\n", n);
         calculate_centers_of_mass(particles, cells, grid_size, space_size, number_particles);
         calculate_new_iteration(particles, cells, grid_size, space_size, number_particles);
         collision_count += check_collisions(particles, cells, grid_size);
     }
-    
-    printf("%.3f %.3f\n", particles[0].x, particles[0].y);
 
+    return collision_count;
+}
+
+/**
+ * Prints the position of the first particle and the total collision count.
+ *
+ * This function outputs the x and y coordinates of the first particle in the
+ * provided array, formatted to three decimal places, followed by the total
+ * number of collisions detected.
+ *
+ * @param particles An array of particles, where the first particle's position
+ *                  will be printed.
+ * @param collision_count The total number of collisions to be printed.
+ */
+void print_result(particle_t *particles, int collision_count) {
+    printf("%.3f %.3f\n", particles[0].x, particles[0].y);
     printf("%d\n", collision_count);
 }
 
-
-// Main function
+/**
+ * Main function to simulate particle dynamics in a grid-based space.
+ *
+ * This function initializes particles and simulates their dynamics over a series
+ * of time steps. It expects five command-line arguments: a random seed, the physical
+ * size of the space, the grid size, the number of particles, and the number of time
+ * steps. The function allocates memory for particles, initializes them, and performs
+ * the simulation, printing the position of the first particle and the total number
+ * of collisions detected.
+ *
+ * @param argc The number of command-line arguments.
+ * @param argv An array of command-line arguments.
+ * @return Returns 1 if an error occurs, otherwise 0.
+ */
 int main(int argc, char *argv[]) {
 
     if (argc != 6) {
@@ -286,12 +367,11 @@ int main(int argc, char *argv[]) {
 
     // exec_time = -omp_get_wtime();
 
-    simulation(particles, grid_size, space_size, number_particles, n_time_steps);   
+    collision_count = (particles, grid_size, space_size, number_particles, n_time_steps);   
     
     // exec_time += omp_get_wtime();
     // fprintf(stderr, "%.1fs\n", exec_time);
-    
-    // print_result();
+    print_result(particles, collision_count);
 }
 
 
