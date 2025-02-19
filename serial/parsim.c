@@ -315,6 +315,13 @@ int simulation(particle_t *particles, int grid_size, double space_size, long lon
         collision_count += check_collisions(particles, cells, grid_size);
     }
 
+    for (int i = 0; i < grid_size; i++) {
+        free(cells[i]);
+    }
+    // Libera o array de ponteiros para as células
+    free(cells);
+
+    
     return collision_count;
 }
 
@@ -378,6 +385,7 @@ int main(int argc, char *argv[]) {
     exec_time += omp_get_wtime();
     print_result(particles, collision_count);
     fprintf(stderr, "Execution time: %.1fs\n", exec_time);
+    free(particles);
 }
 
 
