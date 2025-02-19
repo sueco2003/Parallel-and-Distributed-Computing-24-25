@@ -46,7 +46,7 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
     }
 
     for (long long i = 0; i < number_particles; i++) {
-        
+
         particle_t *particle = &particles[i];
         
         // Determine the cell coordinates
@@ -114,10 +114,11 @@ int check_collisions(particle_t *particles, cell_t **cells, int grid_size) {
             for (particle_t *particle = cells[i][j].head; particle != NULL; particle = particle->next) {
                 if (particle->m == 0) continue;
                 for (particle_t *other = particle->next; other != NULL; other = other->next) {
+
                     double dx = particle->x - other->x;
                     double dy = particle->y - other->y;
                     double dist2 = dx * dx + dy * dy;
-                    //printf("Dist2: %.3f massa1 %f massa2 %f\n", sqrt(dist2), particle->m, other->m);
+
                     // Ensure we only check unique pairs
                     if (dist2 <= EPSILON2) {
                         //printf("Collision detected\n");
@@ -130,7 +131,6 @@ int check_collisions(particle_t *particles, cell_t **cells, int grid_size) {
         }
     }
 
-
     return collision_count;
 }
 
@@ -139,8 +139,10 @@ int check_collisions(particle_t *particles, cell_t **cells, int grid_size) {
 void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_size, double space_size, int number_particles) {
 
     for (int i = 0; i < number_particles; i++) {
+
         particle_t *particle = &particles[i];
         double fx = 0.0, fy = 0.0;
+
         if (particle->m == 0) continue;
 
         // Forças vindas das partículas na mesma célula
@@ -151,8 +153,10 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
             double dx = other->x - particle->x;
             double dy = other->y - particle->y;
             double dist2 = dx * dx + dy * dy;
+
             if (dist2 == 0.0)
                 continue;
+
             double dist = sqrt(dist2);
             double f = G * particle->m * other->m / dist2;
             double partial_fx = f * (dx / dist);
@@ -166,6 +170,7 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
             fx += partial_fx;
             fy += partial_fy;
         }
+
         // Forças vindas dos centros de massa das células adjacentes
         for (int c = 0; c < 8; c++) {
             int ni = cells[particle->cellx][particle->celly].adj_cells[c][0];
@@ -193,9 +198,7 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
             }
             fx += partial_fx;
             fy += partial_fy;
-        }
-
-        
+        } 
 
         // Atualiza velocidade e posição da partícula
         particle->vx += (fx / particle->m) * DELTAT;
@@ -205,17 +208,21 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
 
         int previous_cellx = particle->cellx;
         int previous_celly = particle->celly;
+
         // Atualiza a célula da partícula após o movimento
         particle->cellx = (int)(particle->x / (space_size / grid_size));
         particle->celly = (int)(particle->y / (space_size / grid_size));
 
         if (particle->cellx != previous_cellx || particle->celly != previous_celly) {
+
             // Remove a partícula da célula anterior
             if (particle->prev != NULL) {
                 particle->prev->next = particle->next;
-            } else {
+            }
+            else {
                 cells[previous_cellx][previous_celly].head = particle->next;
             }
+
             if (particle->next != NULL) {
                 particle->next->prev = particle->prev;
             }
