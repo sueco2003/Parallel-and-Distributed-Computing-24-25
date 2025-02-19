@@ -250,12 +250,18 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
         particle->x += particle->vx * DELTAT + 0.5 * (fx / particle->m) * DELTAT * DELTAT;
         particle->y += particle->vy * DELTAT + 0.5 * (fy / particle->m) * DELTAT * DELTAT;
 
+        particle->x = fmod(particle->x, space_size);
+        particle->y = fmod(particle->y, space_size);
+
+        if (particle->x < 0) particle->x += space_size;
+        if (particle->y < 0) particle->y += space_size;
+
         int previous_cellx = particle->cellx;
         int previous_celly = particle->celly;
 
         // Atualiza a célula da partícula após o movimento
-        particle->cellx = (int)(particle->x / (space_size / grid_size));
-        particle->celly = (int)(particle->y / (space_size / grid_size));
+        particle->cellx = (int)(particle->x / ((double)space_size / grid_size));
+        particle->celly = (int)(particle->y / ((double)space_size / grid_size));
 
         if (particle->cellx != previous_cellx || particle->celly != previous_celly) {
 
