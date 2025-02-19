@@ -3,7 +3,7 @@
 #include <math.h>
 #include <string.h>
 #include <stdbool.h>
-// #include <omp.h>
+#include <omp.h>
 #include "../init_particles.h"
 
 #define G 6.67408e-11
@@ -219,7 +219,7 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
             fy += partial_fy;
         }
 
-        // Forças vindas dos centros de massa das células adjacentes
+        // Forces coming from the centers of mass of adjacent cells
         for (int c = 0; c < 8; c++) {
             int ni = cells[particle->cellx][particle->celly].adj_cells[c][0];
             int nj = cells[particle->cellx][particle->celly].adj_cells[c][1];
@@ -227,7 +227,7 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
             double dx = cell->cmx - particle->x;
             double dy = cell->cmy - particle->y;
 
-            // Ajusta para o wrap-around, se necessário
+            // Adjusts for wrap-around if necessary
             if (particle->cellx == 0 && ni == grid_size - 1) dx -= space_size;
             if (particle->cellx == grid_size - 1 && ni == 0) dx += space_size;
             if (particle->celly == 0 && nj == grid_size - 1) dy -= space_size;
@@ -244,7 +244,7 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
             fy += partial_fy;
         } 
 
-        // Atualiza velocidade e posição da partícula
+        // Updates particle velocity and position
         particle->vx += (fx / particle->m) * DELTAT;
         particle->vy += (fy / particle->m) * DELTAT;
         particle->x += particle->vx * DELTAT + 0.5 * (fx / particle->m) * DELTAT * DELTAT;
@@ -259,13 +259,13 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
         int previous_cellx = particle->cellx;
         int previous_celly = particle->celly;
 
-        // Atualiza a célula da partícula após o movimento
+        // Updates the particle cell after movement
         particle->cellx = (int)(particle->x / ((double)space_size / grid_size));
         particle->celly = (int)(particle->y / ((double)space_size / grid_size));
 
         if (particle->cellx != previous_cellx || particle->celly != previous_celly) {
 
-            // Remove a partícula da célula anterior
+            // Removes the particle from the previous cell
             if (particle->prev != NULL) {
                 particle->prev->next = particle->next;
             }
@@ -361,7 +361,7 @@ int main(int argc, char *argv[]) {
     long long number_particles = atoll(argv[4]);
     int n_time_steps = atoi(argv[5]);
     int collision_count = 0;
-
+    double exec_time = 0;
     particle_t *particles = (particle_t *)malloc(sizeof(particle_t) * number_particles);
 
     if (!particles) {
@@ -371,13 +371,13 @@ int main(int argc, char *argv[]) {
 
     init_particles(seed, space_size, grid_size, number_particles, particles);
 
-    // exec_time = -omp_get_wtime();
+    exec_time = -omp_get_wtime();
 
     collision_count = simulation(particles, grid_size, space_size, number_particles, n_time_steps);   
     
-    // exec_time += omp_get_wtime();
-    // fprintf(stderr, "%.1fs\n", exec_time);
+    exec_time += omp_get_wtime();
     print_result(particles, collision_count);
+    fprintf(stderr, "Execution time: %.1fs\n", exec_time);
 }
 
 
