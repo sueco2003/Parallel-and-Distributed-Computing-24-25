@@ -3,6 +3,7 @@
 #include <math.h>
 #include <string.h>
 #include <stdbool.h>
+// #include <omp.h>
 #include "../init_particles.h"
 
 #define G 6.67408e-11
@@ -13,20 +14,19 @@
 
 
 cell_t **init_cells(int grid_size, double space_size, long long number_particles, particle_t *particles) {
+
     cell_t **cells = (cell_t **)malloc(sizeof(cell_t *) * grid_size);
     if (!cells) return NULL;
 
     for (int i = 0; i < grid_size; i++) {
+
         cells[i] = (cell_t *)malloc(sizeof(cell_t) * grid_size);
         if (!cells[i]) return NULL;
 
         for (int j = 0; j < grid_size; j++) {
-            // Initialize cell properties
-            cells[i][j].mass_sum = 0;
-            cells[i][j].cmx = 0;
-            cells[i][j].cmy = 0;
+
+            // Initialize head of the list to NULL
             cells[i][j].head = NULL;
-            memset(cells[i][j].adj_cells, 0, sizeof(cells[i][j].adj_cells));
 
             // Compute adjacent cells with wraparound
             int adj_idx = 0;
@@ -46,6 +46,7 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
     }
 
     for (long long i = 0; i < number_particles; i++) {
+        
         particle_t *particle = &particles[i];
         
         // Determine the cell coordinates
@@ -66,6 +67,7 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
     
     return cells; 
 }
+
 
 // Compute the center of mass of each cell
 void calculate_centers_of_mass(particle_t *particles, cell_t **cells, int grid_size, int space_size, int number_particles) {
@@ -100,8 +102,10 @@ void calculate_centers_of_mass(particle_t *particles, cell_t **cells, int grid_s
     }
 }
 
+
 // Check for collisions between particles
-int check_collisions(particle_t *particles, int *number_particles, cell_t **cells, int grid_size, bool *collision_flags) {
+int check_collisions(particle_t *particles, cell_t **cells, int grid_size) {
+
     int collision_count = 0;
 
     // Detect collisions and mark particles for removal
@@ -115,7 +119,7 @@ int check_collisions(particle_t *particles, int *number_particles, cell_t **cell
                     double dist2 = dx * dx + dy * dy;
                     //printf("Dist2: %.3f massa1 %f massa2 %f\n", sqrt(dist2), particle->m, other->m);
                     // Ensure we only check unique pairs
-                    if (sqrt(dist2) <= sqrt(EPSILON2)) {
+                    if (dist2 <= EPSILON2) {
                         //printf("Collision detected\n");
                         collision_count++;
                         particle->m = 0;
@@ -133,6 +137,7 @@ int check_collisions(particle_t *particles, int *number_particles, cell_t **cell
 // Ver se só se fazem as alterações no final para todas, ou se é tipo Stochastic, vai-se alterando
 
 void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_size, double space_size, int number_particles) {
+
     for (int i = 0; i < number_particles; i++) {
         particle_t *particle = &particles[i];
         double fx = 0.0, fy = 0.0;
@@ -226,17 +231,37 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
         }
         
     }
-    printf("\n");
 }
+
+
+void simulation(particle_t *particles, int grid_size, double space_size, long long number_particles, int n_time_steps) {
+    
+    int collision_count = 0;
+
+    cell_t **cells = init_cells(grid_size, space_size, number_particles, particles);
+
+    for (int n = 0; n < n_time_steps; n++) {
+        printf("Time step %d\n\n", n);
+        calculate_centers_of_mass(particles, cells, grid_size, space_size, number_particles);
+        calculate_new_iteration(particles, cells, grid_size, space_size, number_particles);
+        collision_count += check_collisions(particles, cells, grid_size);
+    }
+    
+    printf("%.3f %.3f\n", particles[0].x, particles[0].y);
+
+    printf("%d\n", collision_count);
+}
+
 
 // Main function
 int main(int argc, char *argv[]) {
+
     if (argc != 6) {
         fprintf(stderr, "Expected 5 arguments, but %d were given\n", argc - 1);
         return 1;
     }
 
-    int seed = atol(argv[1]);
+    long seed = atol(argv[1]);
     double space_size = atof(argv[2]);
     int grid_size = atoi(argv[3]);
     long long number_particles = atoll(argv[4]);
@@ -244,38 +269,22 @@ int main(int argc, char *argv[]) {
     int collision_count = 0;
 
     particle_t *particles = (particle_t *)malloc(sizeof(particle_t) * number_particles);
-    bool *collision_flags = (bool *)malloc(sizeof(bool) * number_particles);
-    if (!particles || !collision_flags) {
+
+    if (!particles) {
         fprintf(stderr, "Failed to allocate memory for particles\n");
         return 1;
     }
+
     init_particles(seed, space_size, grid_size, number_particles, particles);
-    cell_t **cells = init_cells(grid_size, space_size, number_particles, particles);
 
-    for (int n = 0; n < n_time_steps; n++) {
-        printf("Time step %d\n\n", n);
-        //for (int i = 0; i < number_particles; i++) {
-        //    printf("Particle %d: mass = %.3f, x = %.3f, y = %.3f, vx = %.3f, vy = %.3f\n", i, particles[i].m, particles[i].x, particles[i].y, particles[i].vx, particles[i].vy);
-        //}
-        calculate_centers_of_mass(particles, cells, grid_size, space_size, number_particles);
-        calculate_new_iteration(particles, cells, grid_size, space_size, number_particles);
-        collision_count += check_collisions(particles, (int *)&number_particles, cells, grid_size, collision_flags);
-    }
-    printf("\n");
-    //for (int i = 0; i < number_particles; i++) {
-     //   printf("Particle %d: mass = %.3f, x = %.3f, y = %.3f, vx = %.3f, vy = %.3f\n", i, particles[i].m, particles[i].x, particles[i].y, particles[i].vx, particles[i].vy);
-    //}
-    printf("%.3f %.3f\n", particles[0].x, particles[0].y);
+    // exec_time = -omp_get_wtime();
 
-    printf("%d\n", collision_count);
-
-    /*free(particles);
-    for (int i = 0; i < grid_size; i++) {
-        free(cells[i]);
-    }
-    free(cells);*/
+    simulation(particles, grid_size, space_size, number_particles, n_time_steps);   
     
-    return 0;
+    // exec_time += omp_get_wtime();
+    // fprintf(stderr, "%.1fs\n", exec_time);
+    
+    // print_result();
 }
 
 
