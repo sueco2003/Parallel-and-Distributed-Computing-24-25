@@ -196,28 +196,33 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
         double fx = 0.0, fy = 0.0;
 
         if (particle->m == 0) continue;
+        
+        // Forces coming from particles in the same cell
 
-        // Forças vindas das partículas na mesma célula
-        for (particle_t *other = cells[particle->cellx][particle->celly].head; other != NULL; other = other->next) {
-            if (other == particle)
-                continue;
+        cell_t *cell = &cells[particle->cellx][particle->celly];
 
-            double dx = other->x - particle->x;
-            double dy = other->y - particle->y;
-            double dist2 = dx * dx + dy * dy;
+        // Remover a influência da partícula no centro de massa
+        double new_cell_mass = cell->mass_sum - particle->m;
+        if (new_cell_mass <= 0.0) continue; // Evita divisão por zero se a partícula for a única na célula
 
-            if (dist2 == 0.0)
-                continue;
+        double cmx_adj = (cell->cmx * cell->mass_sum - particle->x * particle->m) / new_cell_mass;
+        double cmy_adj = (cell->cmy * cell->mass_sum - particle->y * particle->m) / new_cell_mass;
 
-            double dist = sqrt(dist2);
-            double f = G * particle->m * other->m / dist2;
-            double partial_fx = f * (dx / dist);
-            double partial_fy = f * (dy / dist);
+        // Calcular força com o centro de massa ajustado
+        double dx = cmx_adj - particle->x;
+        double dy = cmy_adj - particle->y;
 
+        double dist2 = dx * dx + dy * dy;
+        if (dist2 == 0.0) continue;
 
-            fx += partial_fx;
-            fy += partial_fy;
-        }
+        double dist = sqrt(dist2);
+        double f = G * particle->m * new_cell_mass / dist2; // Usa a massa ajustada da célula
+        double partial_fx = f * (dx / dist);
+        double partial_fy = f * (dy / dist);
+
+        fx += partial_fx;
+        fy += partial_fy;
+
 
         // Forces coming from the centers of mass of adjacent cells
         for (int c = 0; c < 8; c++) {
@@ -245,10 +250,10 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
         } 
 
         // Updates particle velocity and position
-        particle->vx += (fx / particle->m) * DELTAT;
-        particle->vy += (fy / particle->m) * DELTAT;
         particle->x += particle->vx * DELTAT + 0.5 * (fx / particle->m) * DELTAT * DELTAT;
         particle->y += particle->vy * DELTAT + 0.5 * (fy / particle->m) * DELTAT * DELTAT;
+        particle->vx += (fx / particle->m) * DELTAT;
+        particle->vy += (fy / particle->m) * DELTAT;
 
         particle->x = fmod(particle->x, space_size);
         particle->y = fmod(particle->y, space_size);
@@ -312,7 +317,7 @@ int simulation(particle_t *particles, int grid_size, double space_size, long lon
     for (int n = 0; n < n_time_steps; n++) {
         calculate_centers_of_mass(particles, cells, grid_size, space_size, number_particles);
         calculate_new_iteration(particles, cells, grid_size, space_size, number_particles);
-        collision_count += check_collisions(particles, cells, grid_size);
+        //collision_count += check_collisions(particles, cells, grid_size);
     }
 
     for (int i = 0; i < grid_size; i++) {
