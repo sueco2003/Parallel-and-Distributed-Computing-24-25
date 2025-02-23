@@ -125,6 +125,7 @@ void calculate_centers_of_mass(particle_t *particles, cell_t **cells, int grid_s
                 cell->cmy /= cell->mass_sum;
             }
             cell_counter++;
+            //printf("Cell %d %d: m- %.3f, x - %.3f, y - %.3f\n", i, j, cell->mass_sum, cell->cmx, cell->cmy);
         }
     }
 }
@@ -161,9 +162,14 @@ int check_collisions(particle_t *particles, cell_t **cells, int grid_size) {
 
                     // Ensure we only check unique pairs
                     if (dist2 <= EPSILON2) {
-                        collision_count++;
-                        particle->m = 0;
-                        other->m = 0;
+                    // Print collision information
+                    double dist = sqrt(dist2);
+                    printf("Colisão [Partícula (%.3f), Partícula (%.3f)], Distância: %.6f\n",
+                    particle->m,other->m, dist);
+                    collision_count++;
+                    particle->m = 0;
+                    other->m = 0;
+
                     }
                 }
             }
@@ -196,33 +202,32 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
         double fx = 0.0, fy = 0.0;
 
         if (particle->m == 0) continue;
-        
-        // Forces coming from particles in the same cell
 
-        cell_t *cell = &cells[particle->cellx][particle->celly];
+        // Forças vindas das partículas na mesma célula
+        for (particle_t *other = cells[particle->cellx][particle->celly].head; other != NULL; other = other->next) {
+            if (other == particle)
+                continue;
 
-        // Remover a influência da partícula no centro de massa
-        double new_cell_mass = cell->mass_sum - particle->m;
-        if (new_cell_mass <= 0.0) continue; // Evita divisão por zero se a partícula for a única na célula
+            double dx = other->x - particle->x;
+            double dy = other->y - particle->y;
+            double dist2 = dx * dx + dy * dy;
 
-        double cmx_adj = (cell->cmx * cell->mass_sum - particle->x * particle->m) / new_cell_mass;
-        double cmy_adj = (cell->cmy * cell->mass_sum - particle->y * particle->m) / new_cell_mass;
+            if (dist2 == 0.0)
+                continue;
 
-        // Calcular força com o centro de massa ajustado
-        double dx = cmx_adj - particle->x;
-        double dy = cmy_adj - particle->y;
+            double dist = sqrt(dist2);
+            double f = G * particle->m * other->m / dist2;
+            double partial_fx = f * (dx / dist);
+            double partial_fy = f * (dy / dist);
 
-        double dist2 = dx * dx + dy * dy;
-        if (dist2 == 0.0) continue;
+            if (i == 0) {
+                printf("P0/P[%p] mag: %.3f fx: %.3f fy: %.3f\n", 
+                (void*)other, f, partial_fx, partial_fy);
+            }
 
-        double dist = sqrt(dist2);
-        double f = G * particle->m * new_cell_mass / dist2; // Usa a massa ajustada da célula
-        double partial_fx = f * (dx / dist);
-        double partial_fy = f * (dy / dist);
-
-        fx += partial_fx;
-        fy += partial_fy;
-
+            fx += partial_fx;
+            fy += partial_fy;
+        }
 
         // Forces coming from the centers of mass of adjacent cells
         for (int c = 0; c < 8; c++) {
@@ -244,11 +249,15 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
             double f = G * particle->m * cell->mass_sum / dist2;
             double partial_fx = f * (dx / dist);
             double partial_fy = f * (dy / dist);
+            if (i == 0) {
+            printf("P0/C[%d,%d] mag: %.3f fx: %.3f fy: %.3f\n",
+            ni, nj, f, partial_fx, partial_fy);
+            }
 
             fx += partial_fx;
             fy += partial_fy;
         } 
-
+        
         // Updates particle velocity and position
         particle->x += particle->vx * DELTAT + 0.5 * (fx / particle->m) * DELTAT * DELTAT;
         particle->y += particle->vy * DELTAT + 0.5 * (fy / particle->m) * DELTAT * DELTAT;
@@ -289,7 +298,7 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
             }
             cells[particle->cellx][particle->celly].head = particle;
         }
-        
+    printf("Particle %lld: mass = %.3f, x = %.3f, y = %.3f, vx = %.3f, vy = %.3f\n", i, particle->m, particle->x, particle->y, particle->vx, particle->vy);
     }
 }
 
@@ -313,8 +322,13 @@ int simulation(particle_t *particles, int grid_size, double space_size, long lon
     int collision_count = 0;
 
     cell_t **cells = init_cells(grid_size, space_size, number_particles, particles);
-
+    
+    for(int i = 0; i < number_particles; i++){
+        printf("Particle %lld: mass = %.3f, x = %.3f, y = %.3f, vx = %.3f, vy = %.3f\n", i, particles[i].m, particles[i].x, particles[i].y, particles[i].vx, particles[i].vy);
+    }
+    
     for (int n = 0; n < n_time_steps; n++) {
+        printf("t= %d:\n", n);
         calculate_centers_of_mass(particles, cells, grid_size, space_size, number_particles);
         calculate_new_iteration(particles, cells, grid_size, space_size, number_particles);
         collision_count += check_collisions(particles, cells, grid_size);
