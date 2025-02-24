@@ -163,14 +163,13 @@ int check_collisions(particle_t *particles, cell_t **cells, int grid_size, int c
                     printf("[Partícula (%.3f), Partícula (%.3f)], Distância: %.6f\n", particle->m,other->m, dist);
                     // Ensure we only check unique pairs
                     if (dist2 <= EPSILON2) {
-                    // Print collision information
-                    printf("Colisão [Partícula (%.3f), Partícula (%.3f)], Distância: %.6f\n",
-                    particle->m,other->m, dist);
-                    collision_count++;
-                    particle->m = 0;
-                    other->m = 0;
-                    particle->death_timestamp = current_timestamp;
-                    other->death_timestamp = current_timestamp;      
+                        // Print collision information
+                        double dist = sqrt(dist2);
+                        // printf("Colisão [Partícula (%.3f), Partícula (%.3f)], Distância: %.6f\n",
+                        // particle->m,other->m, dist);
+                        if (particle->m != 0 && other->m != 0) collision_count++;
+                        particle->m = 0;
+                        other->m = 0;
                     }
                 }
             }
@@ -221,10 +220,10 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
             double partial_fx = f * (dx / dist);
             double partial_fy = f * (dy / dist);
 
-            if (i == 0) {
-                printf("P0/P[%p] mag: %.3f fx: %.3f fy: %.3f\n", 
-                (void*)other, f, partial_fx, partial_fy);
-            }
+            // if (i == 0) {
+            //     printf("P0/P[%p] mag: %.3f fx: %.3f fy: %.3f\n", 
+            //     (void*)other, f, partial_fx, partial_fy);
+            // }
 
             fx += partial_fx;
             fy += partial_fy;
@@ -250,10 +249,10 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
             double f = G * particle->m * cell->mass_sum / dist2;
             double partial_fx = f * (dx / dist);
             double partial_fy = f * (dy / dist);
-            if (i == 0) {
-            printf("P0/C[%d,%d] mag: %.3f fx: %.3f fy: %.3f\n",
-            ni, nj, f, partial_fx, partial_fy);
-            }
+            // if (i == 0) {
+            //     printf("P0/C[%d,%d] mag: %.3f fx: %.3f fy: %.3f\n",
+            //     ni, nj, f, partial_fx, partial_fy);
+            // }
 
             fx += partial_fx;
             fy += partial_fy;
@@ -292,14 +291,18 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
                 particle->next->prev = particle->prev;
             }
 
+            // Add particle to the new cell
             particle->next = cells[particle->cellx][particle->celly].head;
             particle->prev = NULL;
+
             if (cells[particle->cellx][particle->celly].head != NULL) {
                 cells[particle->cellx][particle->celly].head->prev = particle;
             }
+
             cells[particle->cellx][particle->celly].head = particle;
         }
-    printf("Particle %lld: mass = %.3f, x = %.3f, y = %.3f, vx = %.3f, vy = %.3f\n", i, particle->m, particle->x, particle->y, particle->vx, particle->vy);
+
+    // printf("Particle %lld: mass = %.3f, x = %.3f, y = %.3f, vx = %.3f, vy = %.3f\n", i, particle->m, particle->x, particle->y, particle->vx, particle->vy);
     }
 }
 
@@ -324,9 +327,9 @@ int simulation(particle_t *particles, int grid_size, double space_size, long lon
 
     cell_t **cells = init_cells(grid_size, space_size, number_particles, particles);
     
-    for(int i = 0; i < number_particles; i++){
-        printf("Particle %lld: mass = %.3f, x = %.3f, y = %.3f, vx = %.3f, vy = %.3f\n", i, particles[i].m, particles[i].x, particles[i].y, particles[i].vx, particles[i].vy);
-    }
+    // for(int i = 0; i < number_particles; i++){
+    //     printf("Particle %lld: mass = %.3f, x = %.3f, y = %.3f, vx = %.3f, vy = %.3f\n", i, particles[i].m, particles[i].x, particles[i].y, particles[i].vx, particles[i].vy);
+    // }
     
     for (int n = 0; n < n_time_steps; n++) {
         printf("t= %d:\n", n);
@@ -407,6 +410,3 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "Execution time: %.1fs\n", exec_time);
     free(particles);
 }
-
-
-

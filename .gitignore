@@ -1,0 +1,5 @@
+# Ignore all the files produced by the makefile
+init_particles.o
+serial/parsim
+omp/parsim-omp
+mpi/parsim-mpi
