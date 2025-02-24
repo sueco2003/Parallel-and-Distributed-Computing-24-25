@@ -4,7 +4,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <omp.h>
-#include "../init_particles.h"
+#include "init_particles.h"
 
 #define G 6.67408e-11
 #define EPSILON2 (0.005 * 0.005)
