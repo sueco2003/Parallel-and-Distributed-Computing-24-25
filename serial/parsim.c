@@ -153,9 +153,13 @@ int check_collisions(particle_t *particles, cell_t **cells, int grid_size, int c
     for (int i = 0; i < grid_size; i++) {
         for (int j = 0; j < grid_size; j++) {
             for (particle_t *particle = cells[i][j].head; particle != NULL; particle = particle->next) {
+
                 if (particle->m == 0) continue;
+
                 for (particle_t *other = particle->next; other != NULL; other = other->next) {
-                    if(particle->death_timestamp != -1 && particle->death_timestamp < current_timestamp) continue;
+
+                    if(other->death_timestamp != -1 && other->death_timestamp < current_timestamp) continue;
+
                     double dx = particle->x - other->x;
                     double dy = particle->y - other->y;
                     double dist2 = dx * dx + dy * dy;
@@ -275,8 +279,8 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
         int previous_celly = particle->celly;
 
         // Updates the particle cell after movement
-        particle->cellx = (int)(particle->x / ((double)space_size / grid_size));
-        particle->celly = (int)(particle->y / ((double)space_size / grid_size));
+        particle->cellx = (int)(particle->x / (space_size / grid_size));
+        particle->celly = (int)(particle->y / (space_size / grid_size));
 
         if (particle->cellx != previous_cellx || particle->celly != previous_celly) {
 
