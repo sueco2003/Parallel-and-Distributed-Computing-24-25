@@ -166,7 +166,7 @@ int check_collisions(particle_t *particles, cell_t **cells, int grid_size) {
                         double dist = sqrt(dist2);
                         // printf("Colisão [Partícula (%.3f), Partícula (%.3f)], Distância: %.6f\n",
                         // particle->m,other->m, dist);
-                        collision_count++;
+                        if (particle->m != 0 && other->m != 0) collision_count++;
                         particle->m = 0;
                         other->m = 0;
                     }
@@ -331,7 +331,7 @@ int simulation(particle_t *particles, int grid_size, double space_size, long lon
     // }
     
     for (int n = 0; n < n_time_steps; n++) {
-        // printf("t= %d:\n", n);
+        printf("t= %d:\n", n);
         calculate_centers_of_mass(particles, cells, grid_size, space_size, number_particles);
         calculate_new_iteration(particles, cells, grid_size, space_size, number_particles);
         collision_count += check_collisions(particles, cells, grid_size);
