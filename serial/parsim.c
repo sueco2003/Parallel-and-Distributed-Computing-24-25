@@ -64,8 +64,8 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
         particle_t *particle = &particles[i];
         
         // Determine the cell coordinates
-        particle->cellx = (int)(particle->x / ((double)space_size / grid_size));
-        particle->celly = (int)(particle->y / ((double)space_size / grid_size));
+        particle->cellx = (int)(particle->x / (space_size / grid_size));
+        particle->celly = (int)(particle->y / (space_size / grid_size));
         // Insert particle at the head of the list
         particle->next = cells[particle->cellx][particle->celly].head;
         particle->prev = NULL;  // Since it's the new head, it has no previous element
@@ -249,7 +249,6 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
             else if (particle->celly == grid_size - 1 && nj == 0) dy += space_size;
 
             double dist2 = dx * dx + dy * dy;
-            if (dist2 == 0.0) continue;
             double dist = sqrt(dist2);
             double f = G * particle->m * cell->mass_sum / dist2;
             double partial_fx = f * (dx / dist);
