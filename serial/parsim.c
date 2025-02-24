@@ -125,7 +125,7 @@ void calculate_centers_of_mass(particle_t *particles, cell_t **cells, int grid_s
                 cell->cmy /= cell->mass_sum;
             }
             cell_counter++;
-            //printf("Cell %d %d: m- %.3f, x - %.3f, y - %.3f\n", i, j, cell->mass_sum, cell->cmx, cell->cmy);
+            // printf("Cell [%d] [%d]: m: %.3f, x: %.3f, y: %.3f\n", i, j, cell->mass_sum, cell->cmx, cell->cmy);
         }
     }
 }
@@ -158,18 +158,18 @@ int check_collisions(particle_t *particles, cell_t **cells, int grid_size, int c
 
                 for (particle_t *other = particle->next; other != NULL; other = other->next) {
 
-                    if(other->death_timestamp != -1 && other->death_timestamp < current_timestamp) continue;
+                    if(other->death_timestamp < current_timestamp) continue;
 
                     double dx = particle->x - other->x;
                     double dy = particle->y - other->y;
                     double dist2 = dx * dx + dy * dy;
                     double dist = sqrt(dist2);
-                    //printf("[Partícula (%.3f), Partícula (%.3f)], Distância: %.6f\n", particle->m,other->m, dist);
+                    // printf("[Partícula (%.3f), Partícula (%.3f)], Distância: %.6f\n", particle->m,other->m, dist);
                     // Ensure we only check unique pairs
                     if (dist2 <= EPSILON2) {
                         // Print collision information
                         //double dist = sqrt(dist2);
-                        //printf("Colisão [Partícula (%.3f), Partícula (%.3f)], Distância: %.6f\n", particle->m,other->m, dist);
+                        // printf("Colisão [Partícula (%.3f), Partícula (%.3f)], Distância: %.6f\n", particle->m,other->m, dist);
                         if (particle->m != 0 && other->m != 0) collision_count++;
                         particle->m = 0;
                         other->m = 0;
@@ -233,9 +233,13 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
 
         // Forces coming from the centers of mass of adjacent cells
         for (int c = 0; c < 8; c++) {
+
             int ni = cells[particle->cellx][particle->celly].adj_cells[c][0];
             int nj = cells[particle->cellx][particle->celly].adj_cells[c][1];
             cell_t *cell = &cells[ni][nj];
+
+            if (cell->mass_sum == 0) continue;
+
             double dx = cell->cmx - particle->x;
             double dy = cell->cmy - particle->y;
 
