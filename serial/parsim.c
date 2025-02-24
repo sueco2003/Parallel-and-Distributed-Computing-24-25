@@ -217,9 +217,6 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
             double dy = other->y - particle->y;
             double dist2 = dx * dx + dy * dy;
 
-            if (dist2 == 0.0)
-                continue;
-
             double dist = sqrt(dist2);
             double f = G * particle->m * other->m / dist2;
             double partial_fx = f * (dx / dist);
