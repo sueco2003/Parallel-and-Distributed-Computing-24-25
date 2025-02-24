@@ -5,6 +5,7 @@ typedef struct particle {
     int cellx, celly;
     double x, y, vx, vy, m;
     struct particle *prev, *next;
+    int death_timestamp;
 } particle_t;
 
 typedef struct {

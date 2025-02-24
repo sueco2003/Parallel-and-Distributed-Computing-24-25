@@ -160,16 +160,17 @@ int check_collisions(particle_t *particles, cell_t **cells, int grid_size, int c
                     double dy = particle->y - other->y;
                     double dist2 = dx * dx + dy * dy;
                     double dist = sqrt(dist2);
-                    printf("[Partícula (%.3f), Partícula (%.3f)], Distância: %.6f\n", particle->m,other->m, dist);
+                    //printf("[Partícula (%.3f), Partícula (%.3f)], Distância: %.6f\n", particle->m,other->m, dist);
                     // Ensure we only check unique pairs
                     if (dist2 <= EPSILON2) {
                         // Print collision information
-                        double dist = sqrt(dist2);
-                        // printf("Colisão [Partícula (%.3f), Partícula (%.3f)], Distância: %.6f\n",
-                        // particle->m,other->m, dist);
+                        //double dist = sqrt(dist2);
+                        //printf("Colisão [Partícula (%.3f), Partícula (%.3f)], Distância: %.6f\n", particle->m,other->m, dist);
                         if (particle->m != 0 && other->m != 0) collision_count++;
                         particle->m = 0;
                         other->m = 0;
+                        particle->death_timestamp = current_timestamp;
+                        other->death_timestamp = current_timestamp;
                     }
                 }
             }
@@ -239,9 +240,9 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
 
             // Adjusts for wrap-around if necessary
             if (particle->cellx == 0 && ni == grid_size - 1) dx -= space_size;
-            if (particle->cellx == grid_size - 1 && ni == 0) dx += space_size;
-            if (particle->celly == 0 && nj == grid_size - 1) dy -= space_size;
-            if (particle->celly == grid_size - 1 && nj == 0) dy += space_size;
+            else if (particle->cellx == grid_size - 1 && ni == 0) dx += space_size;
+            else if (particle->celly == 0 && nj == grid_size - 1) dy -= space_size;
+            else if (particle->celly == grid_size - 1 && nj == 0) dy += space_size;
 
             double dist2 = dx * dx + dy * dy;
             if (dist2 == 0.0) continue;
