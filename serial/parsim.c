@@ -145,7 +145,7 @@ void calculate_centers_of_mass(particle_t *particles, cell_t **cells, int grid_s
  * @param grid_size The number of cells along one dimension of the grid.
  * @return The total number of collisions detected.
  */
-int check_collisions(particle_t *particles, cell_t **cells, int grid_size) {
+int check_collisions(particle_t *particles, cell_t **cells, int grid_size, int current_timestamp) {
 
     int collision_count = 0;
 
@@ -155,21 +155,22 @@ int check_collisions(particle_t *particles, cell_t **cells, int grid_size) {
             for (particle_t *particle = cells[i][j].head; particle != NULL; particle = particle->next) {
                 if (particle->m == 0) continue;
                 for (particle_t *other = particle->next; other != NULL; other = other->next) {
-
+                    if(particle->death_timestamp != -1 && particle->death_timestamp < current_timestamp) continue;
                     double dx = particle->x - other->x;
                     double dy = particle->y - other->y;
                     double dist2 = dx * dx + dy * dy;
-
+                    double dist = sqrt(dist2);
+                    printf("[Partícula (%.3f), Partícula (%.3f)], Distância: %.6f\n", particle->m,other->m, dist);
                     // Ensure we only check unique pairs
                     if (dist2 <= EPSILON2) {
                     // Print collision information
-                    double dist = sqrt(dist2);
                     printf("Colisão [Partícula (%.3f), Partícula (%.3f)], Distância: %.6f\n",
                     particle->m,other->m, dist);
                     collision_count++;
                     particle->m = 0;
                     other->m = 0;
-
+                    particle->death_timestamp = current_timestamp;
+                    other->death_timestamp = current_timestamp;      
                     }
                 }
             }
@@ -331,7 +332,7 @@ int simulation(particle_t *particles, int grid_size, double space_size, long lon
         printf("t= %d:\n", n);
         calculate_centers_of_mass(particles, cells, grid_size, space_size, number_particles);
         calculate_new_iteration(particles, cells, grid_size, space_size, number_particles);
-        collision_count += check_collisions(particles, cells, grid_size);
+        collision_count += check_collisions(particles, cells, grid_size, n);
     }
 
     for (int i = 0; i < grid_size; i++) {
