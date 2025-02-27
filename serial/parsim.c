@@ -221,109 +221,109 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
     // Initialize arrays to store forces acting on each particle
     double *fx_array = (double *)malloc(number_particles * sizeof(double));
     double *fy_array = (double *)malloc(number_particles * sizeof(double));
+    
+    // Initialize as zero
+    memset(fx_array, 0, number_particles * sizeof(double));
+    memset(fy_array, 0, number_particles * sizeof(double));
 
-    // Compute forces acting on each particle from particles
-    for (long long i = 0; i < number_particles; i++) {
-
-        particle_t *particle = &particles[i];
-        double fx = 0.0, fy = 0.0;
-
-        // Skip particles that are already dead
-        if (particle->m == 0) {
-            fx_array[i] = 0;
-            fy_array[i] = 0;
-            continue;
+    // Compute forces acting on each particle
+    for (int cx = 0; cx < grid_size; cx++) {
+        for (int cy = 0; cy < grid_size; cy++) {
+            for (particle_t *particle = cells[cx][cy].head; particle != NULL; particle = particle->next) {
+                // Skip particles that are already dead
+                if (particle->m == 0) continue;
+                
+                long long i = particle - particles; // Index of the current particle
+                
+                for (particle_t *other = particle->next; other != NULL; other = other->next) {
+                    // Skip particles with zero mass
+                    if (other->m == 0) continue;
+                    
+                    long long j = other - particles; // Other particle index
+                    
+                    // Compute distance between particles
+                    double dx = other->x - particle->x;
+                    double dy = other->y - particle->y;
+                    double dist2 = dx * dx + dy * dy;
+                    double dist = sqrt(dist2);
+                    
+                    // Compute gravitational force
+                    double f = G * particle->m * other->m / dist2;
+                    double fx = f * (dx / dist);
+                    double fy = f * (dy / dist);
+                    
+                    // Apply force to both particles (action and reaction)
+                    fx_array[i] += fx;
+                    fy_array[i] += fy;
+                    fx_array[j] -= fx; 
+                    fy_array[j] -= fy; 
+                }
+                
+                // Compute forces acting on each particle from adjacent centers of mass
+                for (int c = 0; c < 8; c++) {
+                    int ni = cells[particle->cellx][particle->celly].adj_cells[c][0];
+                    int nj = cells[particle->cellx][particle->celly].adj_cells[c][1];
+                    cell_t *cell = &cells[ni][nj];
+                    
+                    // Skip cells with zero mass
+                    if (cell->mass_sum == 0) continue;
+                    
+                    // Compute distance between particle and center of mass
+                    double dx = cell->cmx - particle->x;
+                    double dy = cell->cmy - particle->y;
+                    
+                    // Adjusts for wrap-around if necessary
+                    if (particle->cellx == 0 && ni == grid_size - 1) dx -= space_size;
+                    else if (particle->cellx == grid_size - 1 && ni == 0) dx += space_size;
+                    if (particle->celly == 0 && nj == grid_size - 1) dy -= space_size;
+                    else if (particle->celly == grid_size - 1 && nj == 0) dy += space_size;
+                    
+                    double dist2 = dx * dx + dy * dy;
+                    double dist = sqrt(dist2);
+                    
+                    // Add gravitational force due to center of mass to the total force
+                    double f = G * particle->m * cell->mass_sum / dist2;
+                    fx_array[i] += f * (dx / dist);
+                    fy_array[i] += f * (dy / dist);
+                }
+            }
         }
-
-        // Compute forces acting on each particle from other particles in the same cell
-        for (particle_t *other = cells[particle->cellx][particle->celly].head; other != NULL; other = other->next) {
-
-            // Skip computations with the particle itself and particles with zero mass
-            if (other == particle || other->m == 0)
-                continue;
-
-            // Compute distance between particles
-            double dx = other->x - particle->x;
-            double dy = other->y - particle->y;
-            double dist2 = dx * dx + dy * dy;
-            double dist = sqrt(dist2);
-
-            // Add gravitational force due to other particle to the total force
-            double f = G * particle->m * other->m / dist2;
-            fx += f * (dx / dist);
-            fy += f * (dy / dist);
-        }
-
-        // Compute forces acting on each particle from adjacent centers of mass
-        for (int c = 0; c < 8; c++) {
-
-            int ni = cells[particle->cellx][particle->celly].adj_cells[c][0];
-            int nj = cells[particle->cellx][particle->celly].adj_cells[c][1];
-            cell_t *cell = &cells[ni][nj];
-
-            // Skip cells with zero mass
-            if (cell->mass_sum == 0) continue;
-
-            // Compute distance between particle and center of mass
-            double dx = cell->cmx - particle->x;
-            double dy = cell->cmy - particle->y;
-
-            // Adjusts for wrap-around if necessary
-            if (particle->cellx == 0 && ni == grid_size - 1) dx -= space_size;
-            else if (particle->cellx == grid_size - 1 && ni == 0) dx += space_size;
-            if (particle->celly == 0 && nj == grid_size - 1) dy -= space_size;
-            else if (particle->celly == grid_size - 1 && nj == 0) dy += space_size;
-
-            double dist2 = dx * dx + dy * dy;
-            double dist = sqrt(dist2);
-
-            // Add gravitational force due to center of mass to the total force
-            double f = G * particle->m * cell->mass_sum / dist2;
-            fx += f * (dx / dist);
-            fy += f * (dy / dist);
-        }
-
-        // Store forces for later update
-        fx_array[i] = fx;
-        fy_array[i] = fy;
     }
 
     // Update particle positions and velocities
     for (long long i = 0; i < number_particles; i++) {
-
         particle_t *particle = &particles[i];
         
         // Skip particles that are already dead
         if (particle->m == 0) continue;
-
+        
         // Compute x and y components of particle's acceleration
         double ax = fx_array[i] / particle->m;
         double ay = fy_array[i] / particle->m;
-
+        
         // Updates particle position and velocity
         particle->x += particle->vx * DELTAT + 0.5 * ax * DELTAT * DELTAT;
         particle->y += particle->vy * DELTAT + 0.5 * ay * DELTAT * DELTAT;
         particle->vx += ax * DELTAT;
         particle->vy += ay * DELTAT;
-
+        
         // Adjusts for wrap-around if necessary
         particle->x = fmod(particle->x, space_size);
         particle->y = fmod(particle->y, space_size);
-
+        
         if (particle->x < 0) particle->x += space_size;
         if (particle->y < 0) particle->y += space_size;
-
+        
         // Store the previous cell coordinates to check if the particle moved to a new cell
         int previous_cellx = particle->cellx;
         int previous_celly = particle->celly;
-
+        
         // Compute new cell coordinates
         particle->cellx = (int)(particle->x / (space_size / grid_size));
         particle->celly = (int)(particle->y / (space_size / grid_size));
-
+        
         // Update particle's cell if it moved to a new cell
         if (particle->cellx != previous_cellx || particle->celly != previous_celly) {
-
             // Removes the particle from the previous cell
             if (particle->prev != NULL) {
                 particle->prev->next = particle->next;
@@ -331,23 +331,23 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
             else {
                 cells[previous_cellx][previous_celly].head = particle->next;
             }
-
+            
             if (particle->next != NULL) {
                 particle->next->prev = particle->prev;
             }
-
+            
             // Add particle to the new cell
             particle->next = cells[particle->cellx][particle->celly].head;
             particle->prev = NULL;
-
+            
             if (cells[particle->cellx][particle->celly].head != NULL) {
                 cells[particle->cellx][particle->celly].head->prev = particle;
             }
-
+            
             cells[particle->cellx][particle->celly].head = particle;
         }
     }
-
+    
     // Free temporary arrays
     free(fx_array);
     free(fy_array);
