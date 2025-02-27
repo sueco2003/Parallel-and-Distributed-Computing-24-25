@@ -234,13 +234,11 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
                 if (particle->m == 0) continue;
                 
                 long long i = particle - particles; // Index of the current particle
-                
                 for (particle_t *other = particle->next; other != NULL; other = other->next) {
                     // Skip particles with zero mass
                     if (other->m == 0) continue;
                     
                     long long j = other - particles; // Other particle index
-                    
                     // Compute distance between particles
                     double dx = other->x - particle->x;
                     double dy = other->y - particle->y;
@@ -377,7 +375,7 @@ int simulation(particle_t *particles, int grid_size, double space_size, long lon
     
     // Simulation loop (compute centers of mass, update particles, check collisions)
     for (int n = 0; n < n_time_steps; n++) {
-        printf("t = %d\n", n);
+        //printf("t = %d\n", n);
         calculate_centers_of_mass(particles, cells, grid_size, space_size, number_particles);
         calculate_new_iteration(particles, cells, grid_size, space_size, number_particles);
         collision_count += check_collisions(particles, cells, grid_size, n);
@@ -461,7 +459,7 @@ int main(int argc, char *argv[]) {
 
     // Print the results and time of execution
     print_result(particles, collision_count);
-    fprintf(stderr, "Execution time: %.1fs\n", exec_time);
+    fprintf(stderr, "%.1fs\n", exec_time);
 
     // Free the memory allocated for the particles
     free(particles);
