@@ -48,6 +48,7 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
             cell->particles_inside = (particle_t **)malloc(sizeof(particle_t *) * (number_particles * 10 / (grid_size * grid_size)));
             if (!cell->particles_inside) return NULL;
             cell->current_size = 0;
+            cell->capacity = number_particles * 10 / (grid_size * grid_size);
 
             // Compute adjacent cells with wraparound
             int adj_idx = 0;
@@ -80,10 +81,11 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
         cell_t *cell = &cells[particle->cellx][particle->celly];
 
         // Insert particle at the head of the particles_inside
-        if (cell->current_size < number_particles * 10 / (grid_size * grid_size)) {
+        if (cell->current_size < cell->capacity) {
             cell->particles_inside[cell->current_size] = particle;
             cell->current_size++;
         } else {
+            cell->capacity *= 2;
             particle_t **temp = realloc(cell->particles_inside, sizeof(particle_t *) * cell->current_size * 2);
             if (temp == NULL) {
                 fprintf(stderr, "Failed to reallocate memory for particles inside cell\n");
@@ -333,7 +335,8 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
             }
 
             // Insert particle in new cell
-            if (new_cell->current_size == number_particles * 10 / (grid_size * grid_size)) {
+            if (new_cell->current_size == new_cell->capacity) {
+                new_cell->capacity *= 2;
                 particle_t **temp = realloc(new_cell->particles_inside, sizeof(particle_t *) * new_cell->current_size * 2);
                 if (temp == NULL) {
                     fprintf(stderr, "Failed to reallocate memory for particles inside cell\n");
