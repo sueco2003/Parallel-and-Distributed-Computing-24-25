@@ -326,7 +326,7 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
             cell_t *old_cell = &cells[particle->cellx][particle->celly];
             cell_t *new_cell = &cells[new_cellx][new_celly];
             // Removal of particle in old cell
-            for (int j = 0; j < old_cell->current_size; j++) {
+            for (long long j = 0; j < old_cell->current_size; j++) {
                 if (old_cell->particles_inside[j] == particle) {
                     old_cell->particles_inside[j] = old_cell->particles_inside[old_cell->current_size - 1];
                     old_cell->current_size--;
