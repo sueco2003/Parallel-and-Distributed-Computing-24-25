@@ -13,7 +13,7 @@ typedef struct {
     double cmy;
     int adj_cells[8][2];  // Store (x, y) coordinates of 8 neighbors
     particle_t **particles_inside;
-    int current_size;
+    long long current_size;
 
 } cell_t;
 
