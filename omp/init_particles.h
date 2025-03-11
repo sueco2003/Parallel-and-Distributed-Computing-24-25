@@ -2,9 +2,8 @@
 #define INIT_PARTICLES_H
 
 typedef struct particle {
-    int cellx, celly;
+    int cellx, celly, cell_idx;
     double x, y, vx, vy, m;
-    struct particle *prev, *next;
     int death_timestamp;
 } particle_t;
 
@@ -13,7 +12,10 @@ typedef struct {
     double cmx;
     double cmy;
     int adj_cells[8][2];  // Store (x, y) coordinates of 8 neighbors
-    particle_t *head;
+    particle_t **particles_inside;
+    long long current_size;
+    long long capacity;
+
 } cell_t;
 
 typedef struct remove_particle {
