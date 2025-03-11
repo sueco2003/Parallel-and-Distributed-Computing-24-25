@@ -2,7 +2,7 @@
 #define INIT_PARTICLES_H
 
 typedef struct particle {
-    int cellx, celly;
+    int cellx, celly, cell_idx;
     double x, y, vx, vy, m;
     int death_timestamp;
 } particle_t;

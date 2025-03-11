@@ -45,10 +45,10 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
             cell->mass_sum = 0;
             cell->cmx = 0;
             cell->cmy = 0;
-            cell->particles_inside = (particle_t **)malloc(sizeof(particle_t *) * (number_particles * 10 / (grid_size * grid_size)));
+            cell->capacity = number_particles * 10 / (grid_size * grid_size);
+            cell->particles_inside = (particle_t **)malloc(sizeof(particle_t *) * cell->capacity);
             if (!cell->particles_inside) return NULL;
             cell->current_size = 0;
-            cell->capacity = number_particles * 10 / (grid_size * grid_size);
 
             // Compute adjacent cells with wraparound
             int adj_idx = 0;
@@ -82,15 +82,17 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
 
         // Insert particle at the head of the particles_inside
         if (cell->current_size < cell->capacity) {
+            particle->cell_idx = cell->current_size;
             cell->particles_inside[cell->current_size] = particle;
             cell->current_size++;
         } else {
             cell->capacity *= 2;
-            particle_t **temp = realloc(cell->particles_inside, sizeof(particle_t *) * cell->current_size * 2);
+            particle_t **temp = realloc(cell->particles_inside, sizeof(particle_t *) * cell->capacity);
             if (temp == NULL) {
                 fprintf(stderr, "Failed to reallocate memory for particles inside cell\n");
                 exit(1);
             }
+            particle->cell_idx = cell->current_size;
             cell->particles_inside = temp;
             cell->particles_inside[cell->current_size] = particle;
             cell->current_size++;
@@ -325,25 +327,23 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
         if (new_cellx != particle->cellx || new_celly != particle->celly) {
             cell_t *old_cell = &cells[particle->cellx][particle->celly];
             cell_t *new_cell = &cells[new_cellx][new_celly];
-            // Removal of particle in old cell
-            for (long long j = 0; j < old_cell->current_size; j++) {
-                if (old_cell->particles_inside[j] == particle) {
-                    old_cell->particles_inside[j] = old_cell->particles_inside[old_cell->current_size - 1];
-                    old_cell->current_size--;
-                    break;
-                }
-            }
+
+            // Remove particle from old cell
+            old_cell->particles_inside[old_cell->current_size - 1]->cell_idx = particle->cell_idx;
+            old_cell->particles_inside[particle->cell_idx] = old_cell->particles_inside[old_cell->current_size - 1];
+            old_cell->current_size--;
 
             // Insert particle in new cell
             if (new_cell->current_size == new_cell->capacity) {
                 new_cell->capacity *= 2;
-                particle_t **temp = realloc(new_cell->particles_inside, sizeof(particle_t *) * new_cell->current_size * 2);
+                particle_t **temp = realloc(new_cell->particles_inside, sizeof(particle_t *) * new_cell->capacity);
                 if (temp == NULL) {
                     fprintf(stderr, "Failed to reallocate memory for particles inside cell\n");
                     exit(1);
                 }
                 new_cell->particles_inside = temp;
             }
+            particle->cell_idx = new_cell->current_size;
             new_cell->particles_inside[new_cell->current_size++] = particle;
         }
 
