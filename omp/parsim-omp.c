@@ -28,7 +28,7 @@
  * @param particles An array of particles to be distributed across the grid.
  * @return A pointer to the 2D array of cells, or NULL if memory allocation fails.
  */
-cell_t **init_cells(int grid_size, double space_size, long long number_particles, particle_t *particles) {
+cell_t **init_cells(int grid_size, double space_size, long long number_particles, particle_t *particles, omp_lock_t **cell_locks) {
     // Allocate memory for the grid of cells
     cell_t **cells = (cell_t **)malloc(sizeof(cell_t*) * grid_size);
     if (!cells) return NULL;
@@ -82,8 +82,9 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
 
         cell_t *cell = &cells[particle->cellx][particle->celly];
 
-        #pragma omp critical(insert_particle)
-        {
+        // Lock only the specific cell being updated
+        omp_set_lock(&cell_locks[particle->cellx][particle->celly]);
+
         // Insert particle at the head of the particles_inside
         if (cell->current_size < cell->capacity) {
             particle->cell_idx = cell->current_size;
@@ -101,7 +102,8 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
             cell->particles_inside[cell->current_size] = particle;
             cell->current_size++;
         }
-        }
+
+        omp_unset_lock(&cell_locks[particle->cellx][particle->celly]);
     }
 
     return cells;
@@ -223,7 +225,7 @@ int check_collisions(particle_t *particles, cell_t **cells, int grid_size, int c
  * @param space_size The physical size of the space being simulated.
  * @param number_particles The total number of particles to be processed.
  */
-void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_size, double space_size, long long number_particles, double *fx_array, double *fy_array) {
+void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_size, double space_size, long long number_particles, double *fx_array, double *fy_array, omp_lock_t **move_locks) {
 
     // Initialize forces to zero
     memset(fx_array, 0, number_particles * sizeof(double));
@@ -312,11 +314,9 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
         // Skip particles that are already dead
         if (particle->m == 0) continue;
 
-        // Compute x and y components of acceleration
+        // Compute x and y components of acceleration and update position and velocity
         double ax = fx_array[i] / particle->m;
         double ay = fy_array[i] / particle->m;
-
-        // Update particle position and velocity
         particle->x += particle->vx * DELTAT + 0.5 * ax * DELTAT * DELTAT;
         particle->y += particle->vy * DELTAT + 0.5 * ay * DELTAT * DELTAT;
         particle->vx += ax * DELTAT;
@@ -325,30 +325,39 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
         // Wrap around logic
         if (particle->x >= space_size) particle->x -= space_size;
         if (particle->x < 0) particle->x += space_size;
-
         if (particle->y >= space_size) particle->y -= space_size;
         if (particle->y < 0) particle->y += space_size;
 
-        // Move particle to a new cell if necessary
+        // Compute new cell coordinates
         int new_cellx = (int)(particle->x / (space_size / grid_size));
         int new_celly = (int)(particle->y / (space_size / grid_size));
 
-        // If the particle moved to a new cell, update the cell information
+        // If the particle moved to a new cell, update the cell information using cell-specific locks
         if (new_cellx != particle->cellx || new_celly != particle->celly) {
             cell_t *old_cell = &cells[particle->cellx][particle->celly];
             cell_t *new_cell = &cells[new_cellx][new_celly];
 
-            // Remove particle from old cell
-            #pragma omp critical (insert_particle)
-            {
-            old_cell->particles_inside[old_cell->current_size - 1]->cell_idx = particle->cell_idx;
-            old_cell->particles_inside[particle->cell_idx] = old_cell->particles_inside[old_cell->current_size - 1];
-            old_cell->current_size--;
+            // Determine a unique ordering for the two cell locks to avoid deadlock
+            int old_index = particle->cellx * grid_size + particle->celly;
+            int new_index = new_cellx * grid_size + new_celly;
+            if (old_index != new_index) {
+                if (old_index < new_index) {
+                    omp_set_lock(&move_locks[particle->cellx][particle->celly]);
+                    omp_set_lock(&move_locks[new_cellx][new_celly]);
+                } else {
+                    omp_set_lock(&move_locks[new_cellx][new_celly]);
+                    omp_set_lock(&move_locks[particle->cellx][particle->celly]);
+                }
+            } else {
+                omp_set_lock(&move_locks[particle->cellx][particle->celly]);
             }
 
-            // Insert particle in new cell
-            #pragma omp critical (insert_particle)
-            {
+            // Remove particle from the old cell
+            old_cell->particles_inside[particle->cell_idx] = old_cell->particles_inside[old_cell->current_size - 1];
+            old_cell->particles_inside[old_cell->current_size - 1]->cell_idx = particle->cell_idx;
+            old_cell->current_size--;
+
+            // Insert particle into the new cell
             if (new_cell->current_size == new_cell->capacity) {
                 new_cell->capacity *= 2;
                 particle_t **temp = realloc(new_cell->particles_inside, sizeof(particle_t *) * new_cell->capacity);
@@ -360,11 +369,18 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
             }
             particle->cell_idx = new_cell->current_size;
             new_cell->particles_inside[new_cell->current_size++] = particle;
-            }
-        }
 
-        particle->cellx = new_cellx;
-        particle->celly = new_celly;
+            // Unlock both cells
+            if (old_index != new_index) {
+                omp_unset_lock(&move_locks[new_cellx][new_celly]);
+                omp_unset_lock(&move_locks[particle->cellx][particle->celly]);
+            } else {
+                omp_unset_lock(&move_locks[particle->cellx][particle->celly]);
+            }
+            
+            particle->cellx = new_cellx;
+            particle->celly = new_celly;
+        }
     }
 }
 
@@ -390,13 +406,30 @@ int simulation(particle_t *particles, int grid_size, double space_size, long lon
     double *fx_array = (double *)malloc(number_particles * sizeof(double));
     double *fy_array = (double *)malloc(number_particles * sizeof(double));
 
+    // Allocate and initialize cell_locks
+    omp_lock_t **cell_locks = malloc(sizeof(omp_lock_t*) * grid_size);
+    for (int i = 0; i < grid_size; i++) {
+        cell_locks[i] = malloc(sizeof(omp_lock_t) * grid_size);
+        for (int j = 0; j < grid_size; j++) {
+            omp_init_lock(&cell_locks[i][j]);
+        }
+    }
+    // Allocate and initialize move_locks
+    omp_lock_t **move_locks = malloc(sizeof(omp_lock_t*) * grid_size);
+    for (int i = 0; i < grid_size; i++) {
+        move_locks[i] = malloc(sizeof(omp_lock_t) * grid_size);
+        for (int j = 0; j < grid_size; j++) {
+            omp_init_lock(&move_locks[i][j]);
+        }
+    }
+
     // Inicialize the grid of cells and assign particles to them
-    cell_t **cells = init_cells(grid_size, space_size, number_particles, particles);
+    cell_t **cells = init_cells(grid_size, space_size, number_particles, particles, cell_locks);
     
     // Simulation loop (compute centers of mass, update particles, check collisions)
     for (int n = 0; n < n_time_steps; n++) {
         calculate_centers_of_mass(particles, cells, grid_size, space_size, number_particles);
-        calculate_new_iteration(particles, cells, grid_size, space_size, number_particles, fx_array, fy_array);
+        calculate_new_iteration(particles, cells, grid_size, space_size, number_particles, fx_array, fy_array, move_locks);
         collision_count += check_collisions(particles, cells, grid_size, n);
     }
 
@@ -407,10 +440,16 @@ int simulation(particle_t *particles, int grid_size, double space_size, long lon
     for (int i = 0; i < grid_size; i++) {
         for (int j = 0; j < grid_size; j++) {
             free(cells[i][j].particles_inside);
+            omp_destroy_lock(&cell_locks[i][j]);
+            omp_destroy_lock(&move_locks[i][j]);
         }
         free(cells[i]);
+        free(cell_locks[i]);
+        free(move_locks[i]);
     }
     free(cells);
+    free(cell_locks);
+    free(move_locks);
 
     return collision_count;
 }
