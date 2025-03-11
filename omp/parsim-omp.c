@@ -29,6 +29,7 @@
  * @return A pointer to the 2D array of cells, or NULL if memory allocation fails.
  */
 cell_t **init_cells(int grid_size, double space_size, long long number_particles, particle_t *particles, omp_lock_t **cell_locks) {
+
     // Allocate memory for the grid of cells
     cell_t **cells = (cell_t **)malloc(sizeof(cell_t*) * grid_size);
     if (!cells) return NULL;
@@ -39,7 +40,9 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
     }
 
     // Initialize each cell
-    #pragma omp parallel for collapse(2)
+    #pragma omp parallel
+    {
+    #pragma omp for collapse(2)
     for (int i = 0; i < grid_size; i++) {
         for (int j = 0; j < grid_size; j++) {
             cell_t *cell = &cells[i][j];
@@ -71,7 +74,7 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
         }
     }
 
-    #pragma omp parallel for
+    #pragma omp for
     // Assign particles to cells based on their coordinates
     for (long long i = 0; i < number_particles; i++) {
         particle_t *particle = &particles[i];
@@ -105,6 +108,7 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
 
         omp_unset_lock(&cell_locks[particle->cellx][particle->celly]);
     }
+    }
 
     return cells;
 }
@@ -127,7 +131,7 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
 void calculate_centers_of_mass(particle_t *particles, cell_t **cells, int grid_size, int space_size, int number_particles) {
 
     // Initialize mass sum and center of mass for each cell
-    #pragma omp parallel for collapse(2) schedule(guided)
+    #pragma omp for collapse(2) schedule(guided)
     for (int i = 0; i < grid_size; i++) {
         for (int j = 0; j < grid_size; j++) {
             cell_t *cell = &cells[i][j];
@@ -164,11 +168,10 @@ void calculate_centers_of_mass(particle_t *particles, cell_t **cells, int grid_s
  * @param grid_size The number of cells along one dimension of the grid.
  * @return The total number of collisions detected.
  */
-int check_collisions(particle_t *particles, cell_t **cells, int grid_size, int current_timestamp) {
-    int collision_count = 0;
+int check_collisions(particle_t *particles, cell_t **cells, int grid_size, int current_timestamp, int collision_count) {
 
     // Detect collisions and mark particles for removal
-    #pragma omp parallel for collapse(2) schedule(guided) reduction(+:collision_count)
+    #pragma omp for collapse(2) schedule(guided)
     for (int i = 0; i < grid_size; i++) {
         for (int j = 0; j < grid_size; j++) {
             cell_t *cell = &cells[i][j];
@@ -227,12 +230,15 @@ int check_collisions(particle_t *particles, cell_t **cells, int grid_size, int c
  */
 void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_size, double space_size, long long number_particles, double *fx_array, double *fy_array, omp_lock_t **move_locks) {
 
-    // Initialize forces to zero
-    memset(fx_array, 0, number_particles * sizeof(double));
-    memset(fy_array, 0, number_particles * sizeof(double));
+    #pragma omp single
+    {
+        // Initialize forces to zero
+        memset(fx_array, 0, number_particles * sizeof(double));
+        memset(fy_array, 0, number_particles * sizeof(double));
+    }
 
     // Compute forces acting on each particle
-    #pragma omp parallel for collapse(2) schedule(guided)
+    #pragma omp for collapse(2) schedule(guided)
     for (int cx = 0; cx < grid_size; cx++) {
         for (int cy = 0; cy < grid_size; cy++) {
             cell_t *cell = &cells[cx][cy];
@@ -307,7 +313,7 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
     }
 
     // Update particles
-    #pragma omp parallel for
+    #pragma omp for
     for (long long i = 0; i < number_particles; i++) {
         particle_t *particle = &particles[i];
 
@@ -425,14 +431,16 @@ int simulation(particle_t *particles, int grid_size, double space_size, long lon
 
     // Inicialize the grid of cells and assign particles to them
     cell_t **cells = init_cells(grid_size, space_size, number_particles, particles, cell_locks);
-    
-    // Simulation loop (compute centers of mass, update particles, check collisions)
-    for (int n = 0; n < n_time_steps; n++) {
-        calculate_centers_of_mass(particles, cells, grid_size, space_size, number_particles);
-        calculate_new_iteration(particles, cells, grid_size, space_size, number_particles, fx_array, fy_array, move_locks);
-        collision_count += check_collisions(particles, cells, grid_size, n);
-    }
 
+    #pragma omp parallel reduction(+:collision_count)
+    {   
+        // Simulation loop (compute centers of mass, update particles, check collisions)
+        for (int n = 0; n < n_time_steps; n++) {
+            calculate_centers_of_mass(particles, cells, grid_size, space_size, number_particles);
+            calculate_new_iteration(particles, cells, grid_size, space_size, number_particles, fx_array, fy_array, move_locks);
+            collision_count = check_collisions(particles, cells, grid_size, n, collision_count);
+        }
+    }
     // Free memory allocated for cells and forces
     free(fx_array);
     free(fy_array);
