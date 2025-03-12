@@ -260,36 +260,63 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
                 }
 
                 // Compute forces from adjacent centers of mass
-                for (int c = 0; c < 8; c++) {
-                    int ni = cell->adj_cells[c][0];
-                    int nj = cell->adj_cells[c][1];
-
-                    cell_t *adj_cell = &cells[ni][nj];
+                for (int c = 0; c < 8; c += 2) {
+                    int ni1 = cell->adj_cells[c][0];
+                    int nj1 = cell->adj_cells[c][1];
+                    int ni2 = cell->adj_cells[c + 1][0];
+                    int nj2 = cell->adj_cells[c + 1][1];
+                
+                    cell_t *adj_cell1 = &cells[ni1][nj1];
+                    cell_t *adj_cell2 = &cells[ni2][nj2];
                     
                     // Skip cells with zero mass
-                    if (adj_cell->mass_sum == 0) continue;
+                    if (adj_cell1->mass_sum > 0) {
+                        // Compute force between particle and center of mass
+                        double dx = adj_cell1->cmx - particle->x;
+                        double dy = adj_cell1->cmy - particle->y;
 
-                    // Compute force between particle and center of mass
-                    double dx = adj_cell->cmx - particle->x;
-                    double dy = adj_cell->cmy - particle->y;
+                        // Adjusts for wrap-around if necessary
+                        if (particle->cellx == 0 && ni1 == grid_size - 1)
+                            dx -= space_size;
+                        else if (particle->cellx == grid_size - 1 && ni1 == 0)
+                            dx += space_size;
+                        if (particle->celly == 0 && nj1 == grid_size - 1)
+                            dy -= space_size;
+                        else if (particle->celly == grid_size - 1 && nj1 == 0)
+                            dy += space_size;
 
-                    // Adjusts for wrap-around if necessary
-                    if (particle->cellx == 0 && ni == grid_size - 1)
-                        dx -= space_size;
-                    else if (particle->cellx == grid_size - 1 && ni == 0)
-                        dx += space_size;
-                    if (particle->celly == 0 && nj == grid_size - 1)
-                        dy -= space_size;
-                    else if (particle->celly == grid_size - 1 && nj == 0)
-                        dy += space_size;
+                        double dist2 = dx * dx + dy * dy;
+                        double inv_dist = 1.0 / sqrt(dist2);
 
-                    double dist2 = dx * dx + dy * dy;
-                    double inv_dist = 1.0 / sqrt(dist2);
+                        // Add gravitational force due to center of mass to the total force
+                        double f = G * particle->m * adj_cell1->mass_sum * inv_dist * inv_dist;
+                        fx_array[i] += f * dx * inv_dist;
+                        fy_array[i] += f * dy * inv_dist;
+                    }
+                    // Skip cells with zero mass
+                    if (adj_cell2->mass_sum > 0) {
+                        // Compute force between particle and center of mass
+                        double dx = adj_cell2->cmx - particle->x;
+                        double dy = adj_cell2->cmy - particle->y;
 
-                    // Add gravitational force due to center of mass to the total force
-                    double f = G * particle->m * adj_cell->mass_sum * inv_dist * inv_dist;
-                    fx_array[i] += f * dx * inv_dist;
-                    fy_array[i] += f * dy * inv_dist;
+                        // Adjusts for wrap-around if necessary
+                        if (particle->cellx == 0 && ni2 == grid_size - 1)
+                            dx -= space_size;
+                        else if (particle->cellx == grid_size - 1 && ni2 == 0)
+                            dx += space_size;
+                        if (particle->celly == 0 && nj2 == grid_size - 1)
+                            dy -= space_size;
+                        else if (particle->celly == grid_size - 1 && nj2 == 0)
+                            dy += space_size;
+
+                        double dist2 = dx * dx + dy * dy;
+                        double inv_dist = 1.0 / sqrt(dist2);
+
+                        // Add gravitational force due to center of mass to the total force
+                        double f = G * particle->m * adj_cell2->mass_sum * inv_dist * inv_dist;
+                        fx_array[i] += f * dx * inv_dist;
+                        fy_array[i] += f * dy * inv_dist;
+                    }
                 }
             }
         }

@@ -131,7 +131,7 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
 void calculate_centers_of_mass(particle_t *particles, cell_t **cells, int grid_size, int space_size, int number_particles) {
 
     // Initialize mass sum and center of mass for each cell
-    #pragma omp for collapse(2) schedule(guided)
+    #pragma omp for collapse(2) schedule(dynamic, 1)
     for (int i = 0; i < grid_size; i++) {
         for (int j = 0; j < grid_size; j++) {
             cell_t *cell = &cells[i][j];
@@ -139,6 +139,7 @@ void calculate_centers_of_mass(particle_t *particles, cell_t **cells, int grid_s
             cell->cmx = 0;
             cell->cmy = 0;
             // Calculate mass sum and weighted position sums
+            #pragma omp simd
             for (long long idx = 0; idx < cell->current_size; idx++) {
                 particle_t *particle = cell->particles_inside[idx];  // Pointer, not an array access
                 cell->mass_sum += particle->m;
@@ -171,7 +172,7 @@ void calculate_centers_of_mass(particle_t *particles, cell_t **cells, int grid_s
 int check_collisions(particle_t *particles, cell_t **cells, int grid_size, int current_timestamp, int collision_count) {
 
     // Detect collisions and mark particles for removal
-    #pragma omp for collapse(2) schedule(guided)
+    #pragma omp for collapse(2) schedule(dynamic, 1)
     for (int i = 0; i < grid_size; i++) {
         for (int j = 0; j < grid_size; j++) {
             cell_t *cell = &cells[i][j];
@@ -184,6 +185,7 @@ int check_collisions(particle_t *particles, cell_t **cells, int grid_size, int c
                 if (particle->death_timestamp < current_timestamp) continue;
 
                 // Check for collisions with other particles in the same cell
+                #pragma omp simd
                 for (long long idx2 = idx + 1; idx2 < cell->current_size; idx2++) {
                     particle_t *other = cell->particles_inside[idx2];
 
@@ -198,7 +200,10 @@ int check_collisions(particle_t *particles, cell_t **cells, int grid_size, int c
                     // Check if the particles are in collision
                     if (dist2 <= EPSILON2) {
                         // If the collision is not part of a bigger collision, increment the collision count
-                        if (particle->m != 0 && other->m != 0) collision_count++;
+                        if (particle->m != 0 && other->m != 0) {
+                            #pragma omp atomic
+                            collision_count++;
+                        }
                         // Erase the particles
                         particle->m = 0;
                         other->m = 0;
@@ -230,15 +235,14 @@ int check_collisions(particle_t *particles, cell_t **cells, int grid_size, int c
  */
 void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_size, double space_size, long long number_particles, double *fx_array, double *fy_array, omp_lock_t **move_locks) {
 
-    #pragma omp single
-    {
-        // Initialize forces to zero
-        memset(fx_array, 0, number_particles * sizeof(double));
-        memset(fy_array, 0, number_particles * sizeof(double));
+    #pragma omp for simd
+    for (long long i = 0; i < number_particles; i++) {
+        fx_array[i] = 0.0;
+        fy_array[i] = 0.0;
     }
 
     // Compute forces acting on each particle
-    #pragma omp for collapse(2) schedule(guided)
+    #pragma omp for collapse(2) schedule(dynamic, 1)
     for (int cx = 0; cx < grid_size; cx++) {
         for (int cy = 0; cy < grid_size; cy++) {
             cell_t *cell = &cells[cx][cy];
@@ -252,6 +256,7 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
                 long long i = particle - particles;  // Index of the current particle
 
                 // Compute forces between particles in the same cell
+                #pragma omp simd
                 for (int idx2 = idx + 1; idx2 < cell->current_size; idx2++) {
                     particle_t *other = cell->particles_inside[idx2];
 
@@ -277,43 +282,72 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
                 }
 
                 // Compute forces from adjacent centers of mass
-                for (int c = 0; c < 8; c++) {
-                    int ni = cell->adj_cells[c][0];
-                    int nj = cell->adj_cells[c][1];
-
-                    cell_t *adj_cell = &cells[ni][nj];
+                for (int c = 0; c < 8; c += 2) {
+                    int ni1 = cell->adj_cells[c][0];
+                    int nj1 = cell->adj_cells[c][1];
+                    int ni2 = cell->adj_cells[c + 1][0];
+                    int nj2 = cell->adj_cells[c + 1][1];
+                
+                    cell_t *adj_cell1 = &cells[ni1][nj1];
+                    cell_t *adj_cell2 = &cells[ni2][nj2];
                     
                     // Skip cells with zero mass
-                    if (adj_cell->mass_sum == 0) continue;
+                    if (adj_cell1->mass_sum > 0) {
+                        // Compute force between particle and center of mass
+                        double dx = adj_cell1->cmx - particle->x;
+                        double dy = adj_cell1->cmy - particle->y;
 
-                    // Compute force between particle and center of mass
-                    double dx = adj_cell->cmx - particle->x;
-                    double dy = adj_cell->cmy - particle->y;
+                        // Adjusts for wrap-around if necessary
+                        if (particle->cellx == 0 && ni1 == grid_size - 1)
+                            dx -= space_size;
+                        else if (particle->cellx == grid_size - 1 && ni1 == 0)
+                            dx += space_size;
+                        if (particle->celly == 0 && nj1 == grid_size - 1)
+                            dy -= space_size;
+                        else if (particle->celly == grid_size - 1 && nj1 == 0)
+                            dy += space_size;
 
-                    // Adjusts for wrap-around if necessary
-                    if (particle->cellx == 0 && ni == grid_size - 1)
-                        dx -= space_size;
-                    else if (particle->cellx == grid_size - 1 && ni == 0)
-                        dx += space_size;
-                    if (particle->celly == 0 && nj == grid_size - 1)
-                        dy -= space_size;
-                    else if (particle->celly == grid_size - 1 && nj == 0)
-                        dy += space_size;
+                        double dist2 = dx * dx + dy * dy;
+                        double inv_dist = 1.0 / sqrt(dist2);
 
-                    double dist2 = dx * dx + dy * dy;
-                    double inv_dist = 1.0 / sqrt(dist2);
+                        // Add gravitational force due to center of mass to the total force
+                        double f = G * particle->m * adj_cell1->mass_sum * inv_dist * inv_dist;
+                        fx_array[i] += f * dx * inv_dist;
+                        fy_array[i] += f * dy * inv_dist;
+                    }
+                    // Skip cells with zero mass
+                    if (adj_cell2->mass_sum > 0) {
+                        // Compute force between particle and center of mass
+                        double dx = adj_cell2->cmx - particle->x;
+                        double dy = adj_cell2->cmy - particle->y;
 
-                    // Add gravitational force due to center of mass to the total force
-                    double f = G * particle->m * adj_cell->mass_sum * inv_dist * inv_dist;
-                    fx_array[i] += f * dx * inv_dist;
-                    fy_array[i] += f * dy * inv_dist;
+                        // Adjusts for wrap-around if necessary
+                        if (particle->cellx == 0 && ni2 == grid_size - 1)
+                            dx -= space_size;
+                        else if (particle->cellx == grid_size - 1 && ni2 == 0)
+                            dx += space_size;
+                        if (particle->celly == 0 && nj2 == grid_size - 1)
+                            dy -= space_size;
+                        else if (particle->celly == grid_size - 1 && nj2 == 0)
+                            dy += space_size;
+
+                        double dist2 = dx * dx + dy * dy;
+                        double inv_dist = 1.0 / sqrt(dist2);
+
+                        // Add gravitational force due to center of mass to the total force
+                        double f = G * particle->m * adj_cell2->mass_sum * inv_dist * inv_dist;
+                        fx_array[i] += f * dx * inv_dist;
+                        fy_array[i] += f * dy * inv_dist;
+                    }
+
+                    
                 }
             }
         }
     }
 
     // Update particles
-    #pragma omp for
+    #pragma omp parallel for
     for (long long i = 0; i < number_particles; i++) {
         particle_t *particle = &particles[i];
 

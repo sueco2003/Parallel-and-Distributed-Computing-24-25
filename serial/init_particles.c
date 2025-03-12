@@ -1,10 +1,9 @@
 #define _USE_MATH_DEFINES
 #include <math.h>
+#include "init_particles.h"
 #define G 6.67408e-11
 #define EPSILON2 (0.005*0.005)
 #define DELTAT 0.1
-
-#include "init_particles.h"
 
 unsigned int seed;
 void init_r4uni(int input_seed)
@@ -31,17 +30,17 @@ double rnd_normal01()
     return result;
 }
 
-void init_particles(long seed, double side, long ncside, long long n_part, particle_t *par)
+void init_particles(long userseed, double side, long ncside, long long n_part, particle_t *par)
 {
     double (*rnd01)() = rnd_uniform01;
     long long i;
 
-    if(seed < 0) {
+    if(userseed < 0) {
         rnd01 = rnd_normal01;
-        seed = -seed;
+        userseed = -userseed;
     }
     
-    init_r4uni(seed);
+    init_r4uni(userseed);
 
     for(i = 0; i < n_part; i++) {
         par[i].x = rnd01() * side;
@@ -50,7 +49,6 @@ void init_particles(long seed, double side, long ncside, long long n_part, parti
         par[i].vy = (rnd01() - 0.5) * side / ncside / 5.0;
 
         par[i].m = rnd01() * 0.01 * (ncside * ncside) / n_part / G * EPSILON2;
-
         par[i].death_timestamp = INFINITY;
     }
 }
