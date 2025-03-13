@@ -90,7 +90,6 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
 
         // Insert particle at the head of the particles_inside
         if (cell->current_size < cell->capacity) {
-            particle->cell_idx = cell->current_size;
             cell->particles_inside[cell->current_size] = particle;
             cell->current_size++;
         } else {
@@ -100,7 +99,6 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
                 fprintf(stderr, "Failed to reallocate memory for particles inside cell\n");
                 exit(1);
             }
-            particle->cell_idx = cell->current_size;
             cell->particles_inside = temp;
             cell->particles_inside[cell->current_size] = particle;
             cell->current_size++;
@@ -233,7 +231,7 @@ int check_collisions(particle_t *particles, cell_t **cells, int grid_size, int c
  * @param space_size The physical size of the space being simulated.
  * @param number_particles The total number of particles to be processed.
  */
-void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_size, double space_size, long long number_particles, double *fx_array, double *fy_array, omp_lock_t **move_locks) {
+void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_size, double space_size, long long number_particles, double *fx_array, double *fy_array, omp_lock_t **cell_locks) {
 
     #pragma omp for simd
     for (long long i = 0; i < number_particles; i++) {
@@ -346,8 +344,17 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
         }
     }
 
+    // Delete partticles from all cells
+    #pragma omp for collapse(2)
+    for (int i = 0; i < grid_size; i++) {
+        for (int j = 0; j < grid_size; j++) {
+            cell_t *cell = &cells[i][j];
+            cell->current_size = 0;
+        }
+    }
+
     // Update particles
-    #pragma omp parallel for
+    #pragma omp for
     for (long long i = 0; i < number_particles; i++) {
         particle_t *particle = &particles[i];
 
@@ -369,58 +376,31 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
         if (particle->y < 0) particle->y += space_size;
 
         // Compute new cell coordinates
-        int new_cellx = (int)(particle->x / (space_size / grid_size));
-        int new_celly = (int)(particle->y / (space_size / grid_size));
+        particle->cellx = (int)(particle->x / (space_size / grid_size));
+        particle->celly = (int)(particle->y / (space_size / grid_size));
 
-        // If the particle moved to a new cell, update the cell information using cell-specific locks
-        if (new_cellx != particle->cellx || new_celly != particle->celly) {
-            cell_t *old_cell = &cells[particle->cellx][particle->celly];
-            cell_t *new_cell = &cells[new_cellx][new_celly];
+        cell_t *cell = &cells[particle->cellx][particle->celly];
 
-            // Determine a unique ordering for the two cell locks to avoid deadlock
-            int old_index = particle->cellx * grid_size + particle->celly;
-            int new_index = new_cellx * grid_size + new_celly;
-            if (old_index != new_index) {
-                if (old_index < new_index) {
-                    omp_set_lock(&move_locks[particle->cellx][particle->celly]);
-                    omp_set_lock(&move_locks[new_cellx][new_celly]);
-                } else {
-                    omp_set_lock(&move_locks[new_cellx][new_celly]);
-                    omp_set_lock(&move_locks[particle->cellx][particle->celly]);
-                }
-            } else {
-                omp_set_lock(&move_locks[particle->cellx][particle->celly]);
+        // Lock only the specific cell being updated
+        omp_set_lock(&cell_locks[particle->cellx][particle->celly]);
+
+        // Insert particle at the head of the particles_inside
+        if (cell->current_size < cell->capacity) {
+            cell->particles_inside[cell->current_size] = particle;
+            cell->current_size++;
+        } else {
+            cell->capacity *= 2;
+            particle_t **temp = realloc(cell->particles_inside, sizeof(particle_t *) * cell->capacity);
+            if (temp == NULL) {
+                fprintf(stderr, "Failed to reallocate memory for particles inside cell\n");
+                exit(1);
             }
-
-            // Remove particle from the old cell
-            old_cell->particles_inside[particle->cell_idx] = old_cell->particles_inside[old_cell->current_size - 1];
-            old_cell->particles_inside[old_cell->current_size - 1]->cell_idx = particle->cell_idx;
-            old_cell->current_size--;
-
-            // Insert particle into the new cell
-            if (new_cell->current_size == new_cell->capacity) {
-                new_cell->capacity *= 2;
-                particle_t **temp = realloc(new_cell->particles_inside, sizeof(particle_t *) * new_cell->capacity);
-                if (temp == NULL) {
-                    fprintf(stderr, "Failed to reallocate memory for particles inside cell\n");
-                    exit(1);
-                }
-                new_cell->particles_inside = temp;
-            }
-            particle->cell_idx = new_cell->current_size;
-            new_cell->particles_inside[new_cell->current_size++] = particle;
-
-            // Unlock both cells
-            if (old_index != new_index) {
-                omp_unset_lock(&move_locks[new_cellx][new_celly]);
-                omp_unset_lock(&move_locks[particle->cellx][particle->celly]);
-            } else {
-                omp_unset_lock(&move_locks[particle->cellx][particle->celly]);
-            }
-            
-            particle->cellx = new_cellx;
-            particle->celly = new_celly;
+            cell->particles_inside = temp;
+            cell->particles_inside[cell->current_size] = particle;
+            cell->current_size++;
         }
+
+        omp_unset_lock(&cell_locks[particle->cellx][particle->celly]);
     }
 }
 
@@ -454,14 +434,6 @@ int simulation(particle_t *particles, int grid_size, double space_size, long lon
             omp_init_lock(&cell_locks[i][j]);
         }
     }
-    // Allocate and initialize move_locks
-    omp_lock_t **move_locks = malloc(sizeof(omp_lock_t*) * grid_size);
-    for (int i = 0; i < grid_size; i++) {
-        move_locks[i] = malloc(sizeof(omp_lock_t) * grid_size);
-        for (int j = 0; j < grid_size; j++) {
-            omp_init_lock(&move_locks[i][j]);
-        }
-    }
 
     // Inicialize the grid of cells and assign particles to them
     cell_t **cells = init_cells(grid_size, space_size, number_particles, particles, cell_locks);
@@ -471,7 +443,7 @@ int simulation(particle_t *particles, int grid_size, double space_size, long lon
         // Simulation loop (compute centers of mass, update particles, check collisions)
         for (int n = 0; n < n_time_steps; n++) {
             calculate_centers_of_mass(particles, cells, grid_size, space_size, number_particles);
-            calculate_new_iteration(particles, cells, grid_size, space_size, number_particles, fx_array, fy_array, move_locks);
+            calculate_new_iteration(particles, cells, grid_size, space_size, number_particles, fx_array, fy_array, cell_locks);
             collision_count = check_collisions(particles, cells, grid_size, n, collision_count);
         }
     }
@@ -483,15 +455,12 @@ int simulation(particle_t *particles, int grid_size, double space_size, long lon
         for (int j = 0; j < grid_size; j++) {
             free(cells[i][j].particles_inside);
             omp_destroy_lock(&cell_locks[i][j]);
-            omp_destroy_lock(&move_locks[i][j]);
         }
         free(cells[i]);
         free(cell_locks[i]);
-        free(move_locks[i]);
     }
     free(cells);
     free(cell_locks);
-    free(move_locks);
 
     return collision_count;
 }
