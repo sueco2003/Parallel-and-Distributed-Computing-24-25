@@ -89,10 +89,7 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
         omp_set_lock(&cell_locks[particle->cellx][particle->celly]);
 
         // Insert particle at the head of the particles_inside
-        if (cell->current_size < cell->capacity) {
-            cell->particles_inside[cell->current_size] = particle;
-            cell->current_size++;
-        } else {
+        if (cell->current_size >= cell->capacity) {
             cell->capacity *= 2;
             particle_t **temp = realloc(cell->particles_inside, sizeof(particle_t *) * cell->capacity);
             if (temp == NULL) {
@@ -100,9 +97,9 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
                 exit(1);
             }
             cell->particles_inside = temp;
-            cell->particles_inside[cell->current_size] = particle;
-            cell->current_size++;
         }
+        cell->particles_inside[cell->current_size] = particle;
+        cell->current_size++;
 
         omp_unset_lock(&cell_locks[particle->cellx][particle->celly]);
     }
@@ -378,10 +375,7 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
         omp_set_lock(&cell_locks[particle->cellx][particle->celly]);
 
         // Insert particle at the head of the particles_inside
-        if (cell->current_size < cell->capacity) {
-            cell->particles_inside[cell->current_size] = particle;
-            cell->current_size++;
-        } else {
+        if (cell->current_size >= cell->capacity) {
             cell->capacity *= 2;
             particle_t **temp = realloc(cell->particles_inside, sizeof(particle_t *) * cell->capacity);
             if (temp == NULL) {
@@ -389,9 +383,9 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
                 exit(1);
             }
             cell->particles_inside = temp;
-            cell->particles_inside[cell->current_size] = particle;
-            cell->current_size++;
         }
+        cell->particles_inside[cell->current_size] = particle;
+        cell->current_size++;
 
         omp_unset_lock(&cell_locks[particle->cellx][particle->celly]);
     }
