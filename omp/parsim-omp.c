@@ -341,14 +341,7 @@ void calculate_new_iteration(particle_t *particles, cell_t **cells, int grid_siz
                     
                 }
             }
-        }
-    }
-
-    // Delete partticles from all cells
-    #pragma omp for collapse(2)
-    for (int i = 0; i < grid_size; i++) {
-        for (int j = 0; j < grid_size; j++) {
-            cell_t *cell = &cells[i][j];
+            // Delete all particles in cell
             cell->current_size = 0;
         }
     }
