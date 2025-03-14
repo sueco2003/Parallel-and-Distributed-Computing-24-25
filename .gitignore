@@ -3,3 +3,5 @@
 serial/parsim
 omp/parsim-omp
 mpi/parsim-mpi
+omp_practice/
+plot/figures/
