@@ -43,6 +43,3 @@ for i, times in enumerate(times_list):
 
     # Save plot
     plt.savefig(f'figures/times_speedup_{i+1}.png')
-
-    # Show plot
-    plt.show()
