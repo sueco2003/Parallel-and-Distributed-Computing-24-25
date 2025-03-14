@@ -1,9 +1,10 @@
 #ifndef INIT_PARTICLES_H
 #define INIT_PARTICLES_H
 
+#include <omp.h>  // Add this include
+
 typedef struct particle {
-    int cellx, celly;
-    double x, y, vx, vy, m;
+    double x, y, vx, vy, m, fx, fy;
     int death_timestamp;
 } particle_t;
 
@@ -15,13 +16,9 @@ typedef struct {
     particle_t **particles_inside;
     long long current_size;
     long long capacity;
-
+    omp_lock_t lock;  // Add lock directly to the cell structure
 } cell_t;
 
-typedef struct remove_particle {
-    particle_t *particle; 
-    struct remove_particle *next;
-} remove_particle_t;
 
 void init_r4uni(int input_seed);
 double rnd_uniform01();
