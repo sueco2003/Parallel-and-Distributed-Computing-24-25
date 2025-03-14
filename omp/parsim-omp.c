@@ -196,7 +196,6 @@ int check_collisions(particle_t *particles, cell_t **cells, int grid_size, int c
                     if (dist2 <= EPSILON2) {
                         // If the collision is not part of a bigger collision, increment the collision count
                         if (particle->m != 0 && other->m != 0) {
-                            #pragma omp atomic
                             collision_count++;
                         }
                         // Erase the particles
