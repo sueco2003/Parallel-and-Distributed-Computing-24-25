@@ -15,7 +15,6 @@ SRCS_C = parsim-mpi.c
 # Object files
 OBJ = init_particles.o
 
-# Protobuf-generated sources (define properly if applicable)
 PROTO_C_SRCS = 
 PROTO_C_HDRS = 
 
