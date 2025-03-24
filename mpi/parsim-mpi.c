@@ -34,10 +34,8 @@ void create_cartesian_communicator(int grid_size) {
 	
 	// Calculate best grid size for the number of processes
     MPI_Dims_create(number_processors, 2, size_processor_grid);
-	printf("Processor grid inicial (MPI_Dims_create): %d x %d\n", size_processor_grid[0], size_processor_grid[1]);
 	if (size_processor_grid[0] > grid_size) size_processor_grid[0] = grid_size;
     if (size_processor_grid[1] > grid_size) size_processor_grid[1] = grid_size;
-	printf("Processor grid ajustado (limitado por grid_size=%d): %d x %d\n", grid_size, size_processor_grid[0], size_processor_grid[1]);
 
 	MPI_Cart_create(MPI_COMM_WORLD, 2, size_processor_grid, periodic, 1, &cart_comm);
 
@@ -83,18 +81,22 @@ void create_cartesian_communicator(int grid_size) {
 	// Populate all processes
 	processes_buffers = (node_t*)calloc(size_processor_grid[0] * size_processor_grid[1], sizeof(node_t));
 	number_processors = size_processor_grid[0] * size_processor_grid[1];
-	int local_nx = grid_size / size_processor_grid[0];
-	int local_ny = grid_size / size_processor_grid[1];
+	int local_nx = BLOCK_SIZE(my_coordinates[0], size_processor_grid[0], grid_size);
+    int local_ny = BLOCK_SIZE(my_coordinates[1], size_processor_grid[1], grid_size);
+    
+    int start_x = BLOCK_LOW(my_coordinates[0], size_processor_grid[0], grid_size);
+    int start_y = BLOCK_LOW(my_coordinates[1], size_processor_grid[1], grid_size);
 
-// Printando para debug
-printf("Processo %d -> coords=(%d, %d) cuida de %dx%d células\n",
-       myRank, my_coordinates[0], my_coordinates[1], local_nx, local_ny);
+    // Printando para debug
+    //printf("Processo %d -> coords=(%d, %d) cuida de %dx%d células\n", myRank, my_coordinates[0], my_coordinates[1], local_nx, local_ny);
+           
+    //printf("Processo %d -> intervalo de células: x=[%d,%d), y=[%d,%d)\n", myRank, start_x, start_x + local_nx, start_y, start_y + local_ny);
 }
+
 
 void init_cells(int grid_size) {
 	local_cell_dims[0] = BLOCK_SIZE(my_coordinates[0], size_processor_grid[0], grid_size) + 2;
 	local_cell_dims[1] = BLOCK_SIZE(my_coordinates[1], size_processor_grid[1], grid_size) + 2;
-
 	cells = (cell_t**) malloc(sizeof(cell_t*) * local_cell_dims[0]);
 	cell_t* cells_chunk = (cell_t*) calloc(local_cell_dims[0] * local_cell_dims[1], sizeof(cell_t));
 
@@ -115,12 +117,11 @@ void delegate_particles(int grid_size, double space_size, long long number_parti
     }
 
 	for (long long i = 0; i < number_particles; i++) {
-		particle_t particle = particles[i];
+		particle_t *particle = &particles[i];
 
         // Determine the cell coordinates
-        int cellx = (particle.x / (space_size / grid_size));
-        int celly = (particle.y / (space_size / grid_size));
-
+        int cellx = (particle->x / (space_size / grid_size));
+        int celly = (particle->y / (space_size / grid_size));
 		int coords_proc_grid[2];
 		coords_proc_grid[0] = BLOCK_OWNER(cellx, size_processor_grid[0], grid_size);
 		coords_proc_grid[1] = BLOCK_OWNER(celly, size_processor_grid[1], grid_size);
@@ -134,13 +135,13 @@ void delegate_particles(int grid_size, double space_size, long long number_parti
                 local_particles->capacity *= 2;
                 local_particles->particles = (particle_t*)realloc(local_particles->particles, sizeof(particle_t) * local_particles->capacity);
             }
-            local_particles->particles[local_particles->size] = particle;
+            local_particles->particles[local_particles->size] = *particle;
             local_particles->size++;
-            continue;
+			continue;
         }
 
 		// Add to process' buffer
-		buffers[proc_id_to_send - 1][counters[proc_id_to_send - 1]] = particle;
+		buffers[proc_id_to_send - 1][counters[proc_id_to_send - 1]] = *particle;
 		counters[proc_id_to_send - 1]++;
 
 		// Buffer size reach => send
@@ -150,7 +151,7 @@ void delegate_particles(int grid_size, double space_size, long long number_parti
 		}
 	}
 
-	// Send eveything that is not been sent yet.
+	// Send eveything that is not been sent yet
 	for (int i = 1; i < number_processors_grid; i++) {
 		if (counters[i - 1] != 0) {
 			MPI_Send(buffers[i - 1], SIZEOF_PARTICLE(counters[i - 1]), MPI_DOUBLE, i, TAG_INIT_PARTICLES, cart_comm);
@@ -187,7 +188,7 @@ void receiveParticles() {
 		}
 		// Receive particles
 		MPI_Recv(&(local_particles->particles[local_particles->size]), number_doubles, MPI_DOUBLE, 0, TAG_INIT_PARTICLES, cart_comm, &status);
-		printf("Processo %d Recebeu %d particulas\n",myRank, num_particles_received);
+		//printf("Processo %d Recebeu %d particulas\n",myRank, num_particles_received);
 		MPI_Get_count(&status, MPI_DOUBLE, &number_doubles);
 		local_particles->size += num_particles_received;
 
@@ -197,23 +198,21 @@ void receiveParticles() {
 	}
 }
 
-void calculate_centers_of_mass(int grid_size) {
+void calculate_centers_of_mass(int grid_size, double space_size) {
 	// Calculate local center of mass
-	#pragma omp parallel for 
-	for (int i = 0; i < particles->size; i++) {
+	
+	for (int i = 0; i < local_particles->size; i++) {
 		particle_t* particle = &local_particles->particles[i];
-        int global_cell_index_x = particle->x * grid_size;
-        int global_cell_index_y = particle->y * grid_size;
+		if(myRank == 1 ) printf("Processo %d -> particle[%d] -> x=%f, y=%f, m=%f\n\n", myRank, i, particle->x, particle->y, particle->m);
+        int global_cell_index_x = (particle->x / (space_size / grid_size));
+        int global_cell_index_y = (particle->y / (space_size / grid_size));
 		int local_cell_index_x = CONVERT_TO_LOCAL(my_coordinates[0], size_processor_grid[0], grid_size, global_cell_index_x);
 		int local_cell_index_y = CONVERT_TO_LOCAL(my_coordinates[1], size_processor_grid[1], grid_size, global_cell_index_y);
-
+		if (myRank == 1) printf("global_cell_index_x = %d, global_cell_index_y = %d\n", global_cell_index_x, global_cell_index_y);
+		if (myRank == 1) printf("local_cell_index_x = %d, local_cell_index_y = %d\n\n", local_cell_index_x, local_cell_index_y);
 		cell_t* cell = &cells[local_cell_index_x][local_cell_index_y];
-
-		#pragma omp atomic
 		cell->mass_sum += particle->m;
-		#pragma omp atomic
 		cell->cmx += particle->m * particle->x;
-		#pragma omp atomic
 		cell->cmy += particle->m * particle->y;
 	}
 	// Calculate global center of mass
@@ -224,6 +223,7 @@ void calculate_centers_of_mass(int grid_size) {
 				cell->cmx /= cell->mass_sum;
 				cell->cmy /= cell->mass_sum;
 			}
+			printf("Processo %d -> cell[%d][%d] -> cmx=%f, cmy=%f, Cmsum= %f\n\n", myRank, i, j, cell->cmx, cell->cmy, cell->mass_sum);
 		}
 	}
 }
@@ -404,7 +404,6 @@ int main(int argc, char* argv[]) {
     int n_time_steps = atoi(argv[5]);
     int collision_count = 0;
     double exec_time = 0;
-
 	particle_t *particles = (particle_t *)malloc(sizeof(particle_t) * number_particles);
 
     // Initialize particles with random positions and velocities
@@ -430,7 +429,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	for (int n = 0; n < n_time_steps; n++) {
-		//calculate_centers_of_mass(grid_size);
+		calculate_centers_of_mass(grid_size, space_size);
 		//send_recv_centers_of_mass();
 		//calculate_new_iteration(grid_size, space_size);
 		//send_recv_particles();

@@ -19,7 +19,7 @@ PROTO_C_SRCS =
 PROTO_C_HDRS = 
 
 # Compiler flags
-CFLAGS = -O2 -fopenmp -lm
+CFLAGS = -O2 -fopenmp -lm -g
 LDFLAGS = $(LIBS)
 
 # Default target

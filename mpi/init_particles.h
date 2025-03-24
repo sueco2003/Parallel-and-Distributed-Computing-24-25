@@ -47,8 +47,10 @@ typedef struct {
 #define BLOCK_HIGH(id, p, n) (BLOCK_LOW((id) + 1, p, n) - 1)
 #define BLOCK_SIZE(id, p, n) (BLOCK_HIGH(id, p, n) - BLOCK_LOW(id, p, n) + 1)
 #define BLOCK_OWNER(index, p, n) (((p) * ((index) + 1) - 1) / (n))
-
+#define MIN(a,b) (((a)<(b))?(a):(b))
 #define CONVERT_TO_LOCAL(id, p, n, x) (x - BLOCK_LOW(id, p, n) + 1)
+
+
 
 
 void init_r4uni(int input_seed);
