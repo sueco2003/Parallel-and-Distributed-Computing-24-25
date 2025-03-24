@@ -30,13 +30,14 @@ int local_cell_dims[2];
 MPI_Comm cart_comm;
 
 void create_cartesian_communicator(int grid_size) {
-	// Calculate best grid size for the number of processes
 	int periodic[2] = {1, 1};
-
+	
+	// Calculate best grid size for the number of processes
     MPI_Dims_create(number_processors, 2, size_processor_grid);
-
+	printf("Processor grid inicial (MPI_Dims_create): %d x %d\n", size_processor_grid[0], size_processor_grid[1]);
 	if (size_processor_grid[0] > grid_size) size_processor_grid[0] = grid_size;
     if (size_processor_grid[1] > grid_size) size_processor_grid[1] = grid_size;
+	printf("Processor grid ajustado (limitado por grid_size=%d): %d x %d\n", grid_size, size_processor_grid[0], size_processor_grid[1]);
 
 	MPI_Cart_create(MPI_COMM_WORLD, 2, size_processor_grid, periodic, 1, &cart_comm);
 
@@ -64,7 +65,6 @@ void create_cartesian_communicator(int grid_size) {
 			counter++;
 		}
 	}
-
 	// Set structure for adjacent cells
 	for (int i = 0; i < 8; i++) {
 		if (adjacent_processes[i] != NULL) {
@@ -83,6 +83,12 @@ void create_cartesian_communicator(int grid_size) {
 	// Populate all processes
 	processes_buffers = (node_t*)calloc(size_processor_grid[0] * size_processor_grid[1], sizeof(node_t));
 	number_processors = size_processor_grid[0] * size_processor_grid[1];
+	int local_nx = grid_size / size_processor_grid[0];
+	int local_ny = grid_size / size_processor_grid[1];
+
+// Printando para debug
+printf("Processo %d -> coords=(%d, %d) cuida de %dx%d células\n",
+       myRank, my_coordinates[0], my_coordinates[1], local_nx, local_ny);
 }
 
 void init_cells(int grid_size) {
@@ -181,6 +187,7 @@ void receiveParticles() {
 		}
 		// Receive particles
 		MPI_Recv(&(local_particles->particles[local_particles->size]), number_doubles, MPI_DOUBLE, 0, TAG_INIT_PARTICLES, cart_comm, &status);
+		printf("Processo %d Recebeu %d particulas\n",myRank, num_particles_received);
 		MPI_Get_count(&status, MPI_DOUBLE, &number_doubles);
 		local_particles->size += num_particles_received;
 
@@ -204,7 +211,6 @@ void calculate_centers_of_mass(int grid_size) {
 
 		#pragma omp atomic
 		cell->mass_sum += particle->m;
-
 		#pragma omp atomic
 		cell->cmx += particle->m * particle->x;
 		#pragma omp atomic
@@ -383,7 +389,6 @@ void send_recv_particles() {
 
 	//TODO: Implement this function
 }
-
 int main(int argc, char* argv[]) {
 	// Check for the correct number of command-line arguments
     if (argc != 6) {
@@ -425,12 +430,12 @@ int main(int argc, char* argv[]) {
 	}
 
 	for (int n = 0; n < n_time_steps; n++) {
-		calculate_centers_of_mass(grid_size);
-		send_recv_centers_of_mass();
+		//calculate_centers_of_mass(grid_size);
+		//send_recv_centers_of_mass();
 		//calculate_new_iteration(grid_size, space_size);
 		//send_recv_particles();
 
-		memset(cells[0], 0, sizeof(cell_t) * local_cell_dims[0] * local_cell_dims[1]);
+		//memset(cells[0], 0, sizeof(cell_t) * local_cell_dims[0] * local_cell_dims[1]);
 	}
 
 	MPI_Barrier(MPI_COMM_WORLD);
