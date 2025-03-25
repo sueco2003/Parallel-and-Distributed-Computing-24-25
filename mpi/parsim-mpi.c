@@ -14,9 +14,8 @@ particle_array_t *local_particles;
 particle_t *particle;
 
 enum { TAG_INIT_PARTICLES, TAG_SEND_CENTER_OF_MASS, TAG_SEND_PARTICLES };
-enum { DIAGONAL_UP_LEFT, UP, DIAGONAL_UP_RIGHT, LEFT, RIGHT, DIAGONAL_DOWN_LEFT, DOWN, DIAGONAL_DOWN_RIGHT };
 
-node_t* adjacent_processes[8] = {0};
+node_t* adjacent_processes[8] = {NULL};
 
 particle_array_t* particles;
 cell_t** cells;
@@ -30,11 +29,10 @@ int local_cell_dims[2];
 MPI_Comm cart_comm;
 
 void create_cartesian_communicator(int grid_size) {
-	// Calculate best grid size for the number of processes
 	int periodic[2] = {1, 1};
-
+	
+	// Calculate best grid size for the number of processes
     MPI_Dims_create(number_processors, 2, size_processor_grid);
-
 	if (size_processor_grid[0] > grid_size) size_processor_grid[0] = grid_size;
     if (size_processor_grid[1] > grid_size) size_processor_grid[1] = grid_size;
 
@@ -64,7 +62,6 @@ void create_cartesian_communicator(int grid_size) {
 			counter++;
 		}
 	}
-
 	// Set structure for adjacent cells
 	for (int i = 0; i < 8; i++) {
 		if (adjacent_processes[i] != NULL) {
@@ -83,12 +80,22 @@ void create_cartesian_communicator(int grid_size) {
 	// Populate all processes
 	processes_buffers = (node_t*)calloc(size_processor_grid[0] * size_processor_grid[1], sizeof(node_t));
 	number_processors = size_processor_grid[0] * size_processor_grid[1];
+	int local_nx = BLOCK_SIZE(my_coordinates[0], size_processor_grid[0], grid_size);
+    int local_ny = BLOCK_SIZE(my_coordinates[1], size_processor_grid[1], grid_size);
+    
+    int start_x = BLOCK_LOW(my_coordinates[0], size_processor_grid[0], grid_size);
+    int start_y = BLOCK_LOW(my_coordinates[1], size_processor_grid[1], grid_size);
+
+    // Printando para debug
+    //printf("Processo %d -> coords=(%d, %d) cuida de %dx%d células\n", myRank, my_coordinates[0], my_coordinates[1], local_nx, local_ny);
+           
+    //printf("Processo %d -> intervalo de células: x=[%d,%d), y=[%d,%d)\n", myRank, start_x, start_x + local_nx, start_y, start_y + local_ny);
 }
+
 
 void init_cells(int grid_size) {
 	local_cell_dims[0] = BLOCK_SIZE(my_coordinates[0], size_processor_grid[0], grid_size) + 2;
 	local_cell_dims[1] = BLOCK_SIZE(my_coordinates[1], size_processor_grid[1], grid_size) + 2;
-
 	cells = (cell_t**) malloc(sizeof(cell_t*) * local_cell_dims[0]);
 	cell_t* cells_chunk = (cell_t*) calloc(local_cell_dims[0] * local_cell_dims[1], sizeof(cell_t));
 
@@ -109,12 +116,11 @@ void delegate_particles(int grid_size, double space_size, long long number_parti
     }
 
 	for (long long i = 0; i < number_particles; i++) {
-		particle_t particle = particles[i];
+		particle_t *particle = &particles[i];
 
         // Determine the cell coordinates
-        int cellx = (particle.x / (space_size / grid_size));
-        int celly = (particle.y / (space_size / grid_size));
-
+        int cellx = (particle->x / (space_size / grid_size));
+        int celly = (particle->y / (space_size / grid_size));
 		int coords_proc_grid[2];
 		coords_proc_grid[0] = BLOCK_OWNER(cellx, size_processor_grid[0], grid_size);
 		coords_proc_grid[1] = BLOCK_OWNER(celly, size_processor_grid[1], grid_size);
@@ -128,13 +134,13 @@ void delegate_particles(int grid_size, double space_size, long long number_parti
                 local_particles->capacity *= 2;
                 local_particles->particles = (particle_t*)realloc(local_particles->particles, sizeof(particle_t) * local_particles->capacity);
             }
-            local_particles->particles[local_particles->size] = particle;
+            local_particles->particles[local_particles->size] = *particle;
             local_particles->size++;
-            continue;
+			continue;
         }
 
 		// Add to process' buffer
-		buffers[proc_id_to_send - 1][counters[proc_id_to_send - 1]] = particle;
+		buffers[proc_id_to_send - 1][counters[proc_id_to_send - 1]] = *particle;
 		counters[proc_id_to_send - 1]++;
 
 		// Buffer size reach => send
@@ -144,7 +150,7 @@ void delegate_particles(int grid_size, double space_size, long long number_parti
 		}
 	}
 
-	// Send eveything that is not been sent yet.
+	// Send eveything that is not been sent yet
 	for (int i = 1; i < number_processors_grid; i++) {
 		if (counters[i - 1] != 0) {
 			MPI_Send(buffers[i - 1], SIZEOF_PARTICLE(counters[i - 1]), MPI_DOUBLE, i, TAG_INIT_PARTICLES, cart_comm);
@@ -181,6 +187,7 @@ void receiveParticles() {
 		}
 		// Receive particles
 		MPI_Recv(&(local_particles->particles[local_particles->size]), number_doubles, MPI_DOUBLE, 0, TAG_INIT_PARTICLES, cart_comm, &status);
+		//printf("Processo %d Recebeu %d particulas\n",myRank, num_particles_received);
 		MPI_Get_count(&status, MPI_DOUBLE, &number_doubles);
 		local_particles->size += num_particles_received;
 
@@ -190,24 +197,21 @@ void receiveParticles() {
 	}
 }
 
-void calculate_centers_of_mass(int grid_size) {
+void calculate_centers_of_mass(int grid_size, double space_size) {
 	// Calculate local center of mass
-	#pragma omp parallel for 
-	for (int i = 0; i < particles->size; i++) {
+	
+	for (int i = 0; i < local_particles->size; i++) {
 		particle_t* particle = &local_particles->particles[i];
-        int global_cell_index_x = particle->x * grid_size;
-        int global_cell_index_y = particle->y * grid_size;
+		//if(myRank == 1 ) printf("Processo %d -> particle[%d] -> x=%f, y=%f, m=%f\n\n", myRank, i, particle->x, particle->y, particle->m);
+        int global_cell_index_x = (particle->x / (space_size / grid_size));
+        int global_cell_index_y = (particle->y / (space_size / grid_size));
 		int local_cell_index_x = CONVERT_TO_LOCAL(my_coordinates[0], size_processor_grid[0], grid_size, global_cell_index_x);
 		int local_cell_index_y = CONVERT_TO_LOCAL(my_coordinates[1], size_processor_grid[1], grid_size, global_cell_index_y);
-
+		//if (myRank == 1) printf("global_cell_index_x = %d, global_cell_index_y = %d\n", global_cell_index_x, global_cell_index_y);
+		//if (myRank == 1) printf("local_cell_index_x = %d, local_cell_index_y = %d\n\n", local_cell_index_x, local_cell_index_y);
 		cell_t* cell = &cells[local_cell_index_x][local_cell_index_y];
-
-		#pragma omp atomic
 		cell->mass_sum += particle->m;
-
-		#pragma omp atomic
 		cell->cmx += particle->m * particle->x;
-		#pragma omp atomic
 		cell->cmy += particle->m * particle->y;
 	}
 	// Calculate global center of mass
@@ -218,163 +222,105 @@ void calculate_centers_of_mass(int grid_size) {
 				cell->cmx /= cell->mass_sum;
 				cell->cmy /= cell->mass_sum;
 			}
+			//printf("Processo %d -> cell[%d][%d] -> cmx=%f, cmy=%f, Cmsum= %f\n\n", myRank, i, j, cell->cmx, cell->cmy, cell->mass_sum);
 		}
 	}
 }
 
 void send_recv_centers_of_mass() {
-	int cells_size_x = local_cell_dims[0] - 2;
-	int cells_size_y = local_cell_dims[1] - 2;
-	int number_cells_max = cells_size_x * 2 + cells_size_y * 2 + 4;
+    MPI_Request send_requests[8];
+    MPI_Request recv_requests[8];
+    MPI_Status status[8];
+    
+    // Data buffer for sending and receiving cell data
+    double send_buffers[8][3];  // [cell_cmx, cell_cmy, cell_mass_sum]
+    double recv_buffers[8][3];
+    
+    int send_count = 0;
+    int recv_count = 0;
+    
+    // Direction names for debugging
+    const char* direction_names[8] = {
+        "DIAGONAL_UP_LEFT", "UP", "DIAGONAL_UP_RIGHT", 
+        "LEFT", "RIGHT", 
+        "DIAGONAL_DOWN_LEFT", "DOWN", "DIAGONAL_DOWN_RIGHT"
+    };
+    
+    // Prepare send buffers based on the 8 adjacent processes
+    int directions[8][2] = {
+        {-1, -1},{-1, 0},{-1, 1},  // Diagonal up left, up, diagonal up right
+        {0, -1},         {0, 1},    // Left, right
+        {1, -1}, {1, 0}, {1, 1}       // Diagonal down left, down, diagonal down right
+    };
+    
+    //printf("Processo %d: Preparando para enviar centros de massa para vizinhos\n", myRank);
+    
+    // Sending center of mass data to 8 adjacent processes
+    for (int i = 0; i < 8; i++) {
+		if (adjacent_processes[i]->rank == myRank) continue;
+        int dx = directions[i][0];
+        int dy = directions[i][1];
+        
+        // Determine the boundary cell to send based on the direction
+        int boundary_x = (dx == -1) ? 1 : ((dx == 1) ? local_cell_dims[0] - 2 : (local_cell_dims[0] / 2));
+        int boundary_y = (dy == -1) ? 1 : ((dy == 1) ? local_cell_dims[1] - 2 : (local_cell_dims[1] / 2));
+        
+        cell_t* boundary_cell = &cells[boundary_x][boundary_y];
+        
+        send_buffers[i][0] = boundary_cell->cmx;
+        send_buffers[i][1] = boundary_cell->cmy;
+        send_buffers[i][2] = boundary_cell->mass_sum;
+        
+        printf("Processo %d: Enviando para vizinho %s (rank %d): cmx=%f, cmy=%f, mass=%f\n", 
+               myRank, direction_names[i], adjacent_processes[i]->rank, 
+               send_buffers[i][0], send_buffers[i][1], send_buffers[i][2]);
+        
+        // Non-blocking send to adjacent process
+        MPI_Isend(&send_buffers[i], 3, MPI_DOUBLE, adjacent_processes[i]->rank, TAG_SEND_CENTER_OF_MASS, cart_comm, &send_requests[send_count++]);
+    }
+    
+    //printf("Processo %d: Preparando para receber centros de massa de vizinhos\n", myRank);
+    
+    // Receive center of mass data from 8 adjacent processes (Non-blocking)
+    for (int i = 0; i < 8; i++) {
+		if(adjacent_processes[i]->rank == myRank) continue;
+        MPI_Irecv(&recv_buffers[i], 3, MPI_DOUBLE, adjacent_processes[i]->rank, TAG_SEND_CENTER_OF_MASS, cart_comm, &recv_requests[recv_count++]);
+    }
+    // Wait for all sends and receives to complete
+    MPI_Waitall(send_count, send_requests, MPI_STATUSES_IGNORE);
+    MPI_Waitall(recv_count, recv_requests, MPI_STATUSES_IGNORE);
 
-	// Prepare send buffers
-	for (int i = 0; i < 8; i++) {
-		if (adjacent_processes[i]->cells_buffer_send == NULL) {
-			adjacent_processes[i]->cells_buffer_send = (cell_t*)calloc(number_cells_max, sizeof(cell_t));
-		}
-		if (adjacent_processes[i]->cells_buffer_recv == NULL) {
-			adjacent_processes[i]->cells_buffer_recv = (cell_t*)calloc(number_cells_max, sizeof(cell_t));
-		}
-	}
-
-	// Build buffers to send
-	for (int i = 7; i >= 0; i--) {
-		switch (i) {
-			case DIAGONAL_UP_LEFT:
-				adjacent_processes[i]->cells_buffer_send[adjacent_processes[i]->length_send_buffer] = cells[1][1];
-				adjacent_processes[i]->length_send_buffer++;
-				break;
-			case DIAGONAL_UP_RIGHT:
-				adjacent_processes[i]->cells_buffer_send[adjacent_processes[i]->length_send_buffer] = cells[1][cells_size_y];
-				adjacent_processes[i]->length_send_buffer++;
-				break;
-			case DIAGONAL_DOWN_LEFT:
-				adjacent_processes[i]->cells_buffer_send[adjacent_processes[i]->length_send_buffer] = cells[cells_size_x][1];
-				adjacent_processes[i]->length_send_buffer++;
-				break;
-			case DIAGONAL_DOWN_RIGHT:
-				adjacent_processes[i]->cells_buffer_send[adjacent_processes[i]->length_send_buffer] = cells[cells_size_x][cells_size_y];
-				adjacent_processes[i]->length_send_buffer++;
-				break;
-			case LEFT:
-				for (int j = 1; j <= cells_size_x; j++) {
-					adjacent_processes[i]->cells_buffer_send[adjacent_processes[i]->length_send_buffer] = cells[j][1];
-					adjacent_processes[i]->length_send_buffer++;
-				}
-				break;
-			case RIGHT:
-				for (int j = 1; j <= cells_size_x; j++) {
-					adjacent_processes[i]->cells_buffer_send[adjacent_processes[i]->length_send_buffer] = cells[j][cells_size_y];
-					adjacent_processes[i]->length_send_buffer++;
-				}
-				break;
-			case UP:
-				for (int j = 1; j <= cells_size_y; j++) {
-					adjacent_processes[i]->cells_buffer_send[adjacent_processes[i]->length_send_buffer] = cells[1][j];
-					adjacent_processes[i]->length_send_buffer++;
-				}
-				break;
-			case DOWN:
-				for (int j = 1; j <= cells_size_y; j++) {
-					adjacent_processes[i]->cells_buffer_send[adjacent_processes[i]->length_send_buffer] = cells[cells_size_x][j];
-					adjacent_processes[i]->length_send_buffer++;
-				}
-				break;
-
-			default:
-				printf("[%d] Default case in send send_recv_centers_of_mass\n", myRank);
-				fflush(stdout);
-				break;
-		}
-	}
-
-	// Receive
-	MPI_Request request[8];
-	MPI_Status status[8];
-	for (int i = 0; i < 8; i++) {
-		if (adjacent_processes[i]->received == 1) {
-			request[i] = MPI_REQUEST_NULL;
-			continue;
-		}
-
-		MPI_Irecv(adjacent_processes[i]->cells_buffer_recv, SIZEOF_CELL(number_cells_max), MPI_DOUBLE, adjacent_processes[i]->rank, TAG_SEND_CENTER_OF_MASS, cart_comm, &request[i]);
-		adjacent_processes[i]->received = 1;
-	}
-
-	// Send
-	for (int i = 0; i < 8; i++) {
-		if (adjacent_processes[i]->sent == 1) {
-			continue;
-		}
-
-		MPI_Send(adjacent_processes[i]->cells_buffer_send, SIZEOF_CELL(adjacent_processes[i]->length_send_buffer), MPI_DOUBLE, adjacent_processes[i]->rank, TAG_SEND_CENTER_OF_MASS, cart_comm);
-		adjacent_processes[i]->sent = 1;
-	}
-	MPI_Waitall(1, request, status);
-
-	// Reconstruct data
-	for (int i = 0; i < 8; i++) {
-		switch (i) {
-			case DIAGONAL_UP_LEFT:
-				cells[0][0] = adjacent_processes[i]->cells_buffer_recv[adjacent_processes[i]->index];
-				adjacent_processes[i]->index++;
-				break;
-			case DIAGONAL_UP_RIGHT:
-				cells[0][cells_size_y + 1] = adjacent_processes[i]->cells_buffer_recv[adjacent_processes[i]->index];
-				adjacent_processes[i]->index++;
-				break;
-			case DIAGONAL_DOWN_LEFT:
-				cells[cells_size_x + 1][0] = adjacent_processes[i]->cells_buffer_recv[adjacent_processes[i]->index];
-				adjacent_processes[i]->index++;
-				break;
-			case DIAGONAL_DOWN_RIGHT:
-				cells[cells_size_x + 1][cells_size_y + 1] = adjacent_processes[i]->cells_buffer_recv[adjacent_processes[i]->index];
-				adjacent_processes[i]->index++;
-				break;
-			case LEFT:
-				for (int j = 1; j <= cells_size_x; j++) {
-					cells[j][0] = adjacent_processes[i]->cells_buffer_recv[adjacent_processes[i]->index];
-					adjacent_processes[i]->index++;
-				}
-				break;
-			case RIGHT:
-				for (int j = 1; j <= cells_size_x; j++) {
-					cells[j][cells_size_y + 1] = adjacent_processes[i]->cells_buffer_recv[adjacent_processes[i]->index];
-					adjacent_processes[i]->index++;
-				}
-				break;
-			case UP:
-				for (int j = 1; j <= cells_size_y; j++) {
-					cells[0][j] = adjacent_processes[i]->cells_buffer_recv[adjacent_processes[i]->index];
-					adjacent_processes[i]->index++;
-				}
-				break;
-			case DOWN:
-				for (int j = 1; j <= cells_size_y; j++) {
-					cells[cells_size_x + 1][j] = adjacent_processes[i]->cells_buffer_recv[adjacent_processes[i]->index];
-					adjacent_processes[i]->index++;
-				}
-				break;
-
-			default:
-				printf("[%d] Default case in send Reconstruct Data\n", myRank);
-				fflush(stdout);
-				break;
-		}
-	}
-
-	// Reset structures
-	for (int i = 0; i < 8; i++) {
-		adjacent_processes[i]->cells_buffer_send = NULL;
-		adjacent_processes[i]->cells_buffer_recv = NULL;
-		adjacent_processes[i]->length_send_buffer = 0;
-		adjacent_processes[i]->sent = 0;
-		adjacent_processes[i]->received = 0;
-		adjacent_processes[i]->index = 0;
-	}
+    //printf("Processo %d: Processando centros de massa recebidos\n", myRank);
+    
+    // Process received center of mass data
+    for (int i = 0; i < 8; i++) {
+        int dx = directions[i][0];
+        int dy = directions[i][1];
+        
+        // Determine the ghost cell to update based on the direction
+        int ghost_x = (dx == -1) ? 0 : ((dx == 1) ? local_cell_dims[0] - 1 : (local_cell_dims[0] / 2));
+        int ghost_y = (dy == -1) ? 0 : ((dy == 1) ? local_cell_dims[1] - 1 : (local_cell_dims[1] / 2));
+        
+        cell_t* ghost_cell = &cells[ghost_x][ghost_y];
+        
+        /*printf("Processo %d: Recebido de vizinho %s (rank %d): cmx=%f, cmy=%f, mass=%f\n", 
+               myRank, direction_names[i], adjacent_processes[i]->rank, 
+               recv_buffers[i][0], recv_buffers[i][1], recv_buffers[i][2]);*/
+        
+        // Update ghost cell with received center of mass
+        if (recv_buffers[i][2] > 0) {  // Only update if mass is non-zero
+            ghost_cell->cmx = recv_buffers[i][0];
+            ghost_cell->cmy = recv_buffers[i][1];
+            ghost_cell->mass_sum = recv_buffers[i][2];
+            
+            //printf("Processo %d: Atualizando célula fantasma %s com centro de massa\n", myRank, direction_names[i]);
+        }
+    }
+    
+    //printf("Processo %d: Comunicação de centros de massa concluída\n", myRank);
 }
 
-void calculate_new_iteration(int grid_size, int space_size) {
+void calculate_new_iteration(int grid_size, double space_size) {
 
 	//TODO: Implement this function
 }
@@ -383,7 +329,6 @@ void send_recv_particles() {
 
 	//TODO: Implement this function
 }
-
 int main(int argc, char* argv[]) {
 	// Check for the correct number of command-line arguments
     if (argc != 6) {
@@ -399,7 +344,6 @@ int main(int argc, char* argv[]) {
     int n_time_steps = atoi(argv[5]);
     int collision_count = 0;
     double exec_time = 0;
-
 	particle_t *particles = (particle_t *)malloc(sizeof(particle_t) * number_particles);
 
     // Initialize particles with random positions and velocities
@@ -425,12 +369,12 @@ int main(int argc, char* argv[]) {
 	}
 
 	for (int n = 0; n < n_time_steps; n++) {
-		calculate_centers_of_mass(grid_size);
+		calculate_centers_of_mass(grid_size, space_size);
 		send_recv_centers_of_mass();
 		//calculate_new_iteration(grid_size, space_size);
 		//send_recv_particles();
 
-		memset(cells[0], 0, sizeof(cell_t) * local_cell_dims[0] * local_cell_dims[1]);
+		//memset(cells[0], 0, sizeof(cell_t) * local_cell_dims[0] * local_cell_dims[1]);
 	}
 
 	MPI_Barrier(MPI_COMM_WORLD);
