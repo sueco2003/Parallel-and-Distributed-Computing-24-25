@@ -18,8 +18,8 @@ typedef struct {
 } cell_t;
 
 typedef struct {
-	int size;
-    int capacity;
+	long long current_size;
+    long long capacity;
 	particle_t *particles;
 } particle_array_t;
 
