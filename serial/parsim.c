@@ -112,7 +112,7 @@ cell_t **init_cells(int grid_size, double space_size, long long number_particles
  * @param space_size The physical size of the space being simulated.
  * @param number_particles The total number of particles to be processed.
  */
-void calculate_centers_of_mass(particle_t *particles, cell_t **cells, int grid_size, int space_size, int number_particles) {
+void calculate_centers_of_mass(particle_t *particles, cell_t **cells, int grid_size, int space_size, long long number_particles) {
 
     // Initialize mass sum and center of mass for each cell
     for (int i = 0; i < grid_size; i++) {
