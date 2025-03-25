@@ -389,7 +389,7 @@ int simulation(particle_t *particles, int grid_size, double space_size, long lon
 
     // Simulation loop (compute centers of mass, update particles, check collisions)
     for (int n = 0; n < n_time_steps; n++) {
-        calculate_centers_of_mass(particles, cells, grid_size, space_size, number_particles);
+        calculate_centers_of_mass(particles, cells, grid_size);
         calculate_new_iteration(particles, cells, grid_size, space_size, number_particles);
         collision_count = check_collisions(particles, cells, grid_size, n, collision_count);
     }
