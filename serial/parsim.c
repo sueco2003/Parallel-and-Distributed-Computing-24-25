@@ -150,7 +150,7 @@ void calculate_centers_of_mass(particle_t *particles, cell_t **cells, int grid_s
  * @param grid_size The number of cells along one dimension of the grid.
  * @return The total number of collisions detected.
  */
-int check_collisions(particle_t *particles, cell_t **cells, int grid_size, int current_timestamp, int collision_count) {
+int check_collisions(cell_t **cells, int grid_size, int current_timestamp, int collision_count) {
 
     // Detect collisions and mark particles for removal
     for (int i = 0; i < grid_size; i++) {
@@ -391,7 +391,7 @@ int simulation(particle_t *particles, int grid_size, double space_size, long lon
     for (int n = 0; n < n_time_steps; n++) {
         calculate_centers_of_mass(particles, cells, grid_size);
         calculate_new_iteration(particles, cells, grid_size, space_size, number_particles);
-        collision_count = check_collisions(particles, cells, grid_size, n, collision_count);
+        collision_count = check_collisions(cells, grid_size, n, collision_count);
     }
 
     for (int i = 0; i < grid_size; i++) {
